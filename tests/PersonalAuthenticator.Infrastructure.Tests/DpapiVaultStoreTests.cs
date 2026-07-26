@@ -65,6 +65,39 @@ public sealed class DpapiVaultStoreTests : IDisposable
             () => store.LoadAsync(TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task Save_WhenStorageSecurityFails_DoesNotReplaceCommittedVault()
+    {
+        var store = new DpapiVaultStore(NullLogger<DpapiVaultStore>.Instance, _directory);
+        using var original = new TotpAccount(
+            Guid.NewGuid(),
+            "Original",
+            "account",
+            RandomNumberGenerator.GetBytes(20));
+        await store.SaveAsync([original], TestContext.Current.CancellationToken);
+        byte[] committed = await File.ReadAllBytesAsync(
+            store.VaultPath,
+            TestContext.Current.CancellationToken);
+        var failingStore = new DpapiVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory,
+            _ => throw new UnauthorizedAccessException("Simulated ACL failure."));
+        using var replacement = new TotpAccount(
+            Guid.NewGuid(),
+            "Replacement",
+            "account",
+            RandomNumberGenerator.GetBytes(20));
+
+        SafeApplicationException exception = await Assert.ThrowsAsync<SafeApplicationException>(
+            () => failingStore.SaveAsync([replacement], TestContext.Current.CancellationToken));
+
+        Assert.Equal("Vault.SecurityFailed", exception.ErrorCode);
+        byte[] afterFailure = await File.ReadAllBytesAsync(
+            store.VaultPath,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(committed, afterFailure);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

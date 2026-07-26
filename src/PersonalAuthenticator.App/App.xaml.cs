@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using PersonalAuthenticator.App.ViewModels;
 using PersonalAuthenticator.Core.Abstractions;
@@ -18,7 +19,9 @@ namespace PersonalAuthenticator.App;
 public partial class App : Application
 {
     private readonly ServiceProvider _services;
-    private Window? _window;
+    private MainWindow? _window;
+    private Task? _shutdownTask;
+    private bool _shutdownComplete;
 
     public App()
     {
@@ -35,7 +38,7 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         _window = _services.GetRequiredService<MainWindow>();
-        _window.Closed += OnWindowClosed;
+        _window.AppWindow.Closing += OnWindowClosing;
         _window.Activate();
     }
 
@@ -64,16 +67,63 @@ public partial class App : Application
         services.AddSingleton<MainWindow>();
     }
 
-    private async void OnWindowClosed(object sender, WindowEventArgs args)
+    private void OnWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
+        if (_shutdownComplete)
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        _window?.BeginShutdown();
+        sender.Hide();
+        _shutdownTask ??= ShutdownAndCloseAsync();
+    }
+
+    private async Task ShutdownAndCloseAsync()
+    {
+        await Task.Yield();
+        ILogger<App> logger = _services.GetRequiredService<ILogger<App>>();
+
         try
         {
             await _services.GetRequiredService<ISecureClipboardService>().CancelPendingClearAsync();
+        }
+        catch (Exception exception)
+        {
+            AppLog.UnhandledUiError(logger, exception.GetType().Name);
+        }
+
+        try
+        {
             await _services.GetRequiredService<IVaultService>().LockAsync(CancellationToken.None);
         }
-        finally
+        catch (Exception exception)
+        {
+            AppLog.UnhandledUiError(logger, exception.GetType().Name);
+        }
+
+        try
         {
             await _services.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            AppLog.UnhandledUiError(logger, exception.GetType().Name);
+        }
+
+        _shutdownComplete = true;
+        Window? window = _window;
+        if (window is null)
+        {
+            Exit();
+            return;
+        }
+
+        window.AppWindow.Closing -= OnWindowClosing;
+        if (!window.DispatcherQueue.TryEnqueue(window.Close))
+        {
+            Exit();
         }
     }
 

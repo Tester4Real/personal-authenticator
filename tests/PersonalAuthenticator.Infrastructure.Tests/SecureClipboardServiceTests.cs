@@ -19,7 +19,7 @@ public sealed class SecureClipboardServiceTests
             TimeSpan.FromMilliseconds(20),
             callerCancellation.Token);
         callerCancellation.Cancel();
-        await Task.Delay(200, TestContext.Current.CancellationToken);
+        await clipboard.Cleared.Task.WaitAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(clipboard.Content);
         Assert.Equal(1, clipboard.ClearCount);
@@ -62,22 +62,100 @@ public sealed class SecureClipboardServiceTests
         Assert.Equal(0, clipboard.ClearCount);
     }
 
+    [Fact]
+    public async Task NaturalClear_ReleasesPendingOwnershipState()
+    {
+        var clipboard = new FakeClipboardAdapter();
+        await using var service = new SecureClipboardService(
+            NullLogger<SecureClipboardService>.Instance,
+            clipboard);
+
+        await service.CopyCodeAsync(
+            "123456",
+            TimeSpan.Zero,
+            TestContext.Current.CancellationToken);
+        await clipboard.Cleared.Task.WaitAsync(TestContext.Current.CancellationToken);
+        int readsAfterNaturalClear = clipboard.ReadCount;
+
+        await service.CancelPendingClearAsync();
+
+        Assert.Equal(1, clipboard.ClearCount);
+        Assert.Equal(readsAfterNaturalClear, clipboard.ReadCount);
+    }
+
+    [Fact]
+    public async Task NewCopy_AfterNaturalClearOwnsIndependentPendingClear()
+    {
+        var clipboard = new FakeClipboardAdapter();
+        await using var service = new SecureClipboardService(
+            NullLogger<SecureClipboardService>.Instance,
+            clipboard);
+
+        await service.CopyCodeAsync(
+            "123456",
+            TimeSpan.Zero,
+            TestContext.Current.CancellationToken);
+        await clipboard.Cleared.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        await service.CopyCodeAsync(
+            "654321",
+            TimeSpan.FromMinutes(1),
+            TestContext.Current.CancellationToken);
+        await service.CancelPendingClearAsync();
+
+        Assert.Null(clipboard.Content);
+        Assert.Equal(2, clipboard.ClearCount);
+        Assert.Equal(2, clipboard.ReadCount);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_ClearsOwnedCodeAndRejectsLaterCopies()
+    {
+        var clipboard = new FakeClipboardAdapter();
+        var service = new SecureClipboardService(
+            NullLogger<SecureClipboardService>.Instance,
+            clipboard);
+        await service.CopyCodeAsync(
+            "123456",
+            TimeSpan.FromMinutes(1),
+            TestContext.Current.CancellationToken);
+
+        await service.DisposeAsync();
+
+        Assert.Null(clipboard.Content);
+        Assert.Equal(1, clipboard.ClearCount);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => service.CopyCodeAsync(
+                "654321",
+                TimeSpan.FromMinutes(1),
+                TestContext.Current.CancellationToken));
+    }
+
     private sealed class FakeClipboardAdapter : IClipboardAdapter
     {
         public OwnedClipboardContent? Content { get; set; }
 
         public int ClearCount { get; private set; }
 
+        public int ReadCount { get; private set; }
+
+        public TaskCompletionSource Cleared { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void SetOwnedCode(string code, string ownershipMarker) =>
             Content = new OwnedClipboardContent(code, ownershipMarker);
 
-        public Task<OwnedClipboardContent?> ReadOwnedContentAsync() =>
-            Task.FromResult(Content);
+        public Task<OwnedClipboardContent?> ReadOwnedContentAsync()
+        {
+            ReadCount++;
+            return Task.FromResult(Content);
+        }
 
         public void Clear()
         {
             Content = null;
             ClearCount++;
+            Cleared.TrySetResult();
         }
     }
 }

@@ -9,7 +9,6 @@ public sealed partial class AccountCardViewModel : ObservableObject
     private readonly TotpAccount _account;
     private readonly ITotpGenerator _generator;
     private long _lastTimeStep = -1;
-    private bool _hideByDefault;
 
     public AccountCardViewModel(
         TotpAccount account,
@@ -18,7 +17,7 @@ public sealed partial class AccountCardViewModel : ObservableObject
     {
         _account = account;
         _generator = generator;
-        _hideByDefault = hideByDefault;
+        IsRevealed = !hideByDefault;
         Issuer = account.Issuer;
         AccountName = account.AccountName;
         Favourite = account.Favourite;
@@ -42,7 +41,7 @@ public sealed partial class AccountCardViewModel : ObservableObject
 
     public string AccessibleCountdown => $"{SecondsRemaining} seconds remain before the code changes";
 
-    public bool IsCodeHidden => _hideByDefault && !IsRevealed;
+    public bool IsCodeHidden => !IsRevealed;
 
     [ObservableProperty]
     public partial string DisplayCode { get; set; } = "••• •••";
@@ -93,12 +92,11 @@ public sealed partial class AccountCardViewModel : ObservableObject
         AccountName = _account.AccountName;
         Favourite = _account.Favourite;
         SortOrder = _account.SortOrder;
-        _hideByDefault = hideByDefault;
+        SetRevealed(!hideByDefault);
         OnPropertyChanged(nameof(Issuer));
         OnPropertyChanged(nameof(AccountName));
         OnPropertyChanged(nameof(Favourite));
         OnPropertyChanged(nameof(FavouriteGlyph));
         OnPropertyChanged(nameof(SortOrder));
-        OnPropertyChanged(nameof(IsCodeHidden));
     }
 }

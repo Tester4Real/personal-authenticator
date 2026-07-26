@@ -241,8 +241,47 @@ public sealed class VaultService : IVaultService
                     accounts.Clear();
                 }
 
+                var accountIds = new HashSet<Guid>();
+                foreach (TotpAccount existing in accounts)
+                {
+                    if (!accountIds.Add(existing.Id))
+                    {
+                        throw new SafeApplicationException(
+                            "Vault.DuplicateId",
+                            "The vault contains duplicate account identifiers and cannot be merged safely.");
+                    }
+                }
+
                 foreach (TotpAccount imported in sourceAccounts)
                 {
+                    bool idCollision = accountIds.Contains(imported.Id);
+                    if (idCollision && mode == BackupImportMode.Merge)
+                    {
+                        continue;
+                    }
+
+                    if (idCollision && mode == BackupImportMode.MergeReplaceDuplicates)
+                    {
+                        TotpAccount identityMatch = accounts.First(
+                            existing => existing.Id == imported.Id);
+                        int identityIndex = accounts.IndexOf(identityMatch);
+                        TotpAccount identityReplacement = CloneAccount(imported);
+                        accounts.RemoveAt(identityIndex);
+                        identityMatch.Dispose();
+                        identityReplacement.SetSortOrder(identityIndex, _clock.UtcNow);
+                        accounts.Insert(identityIndex, identityReplacement);
+                        continue;
+                    }
+
+                    if (idCollision)
+                    {
+                        Guid replacementId = CreateUniqueAccountId(accountIds);
+                        TotpAccount collisionCopy = CloneAccount(imported, replacementId);
+                        collisionCopy.SetSortOrder(accounts.Count, _clock.UtcNow);
+                        accounts.Add(collisionCopy);
+                        continue;
+                    }
+
                     TotpAccount? duplicate = mode == BackupImportMode.Replace
                         ? null
                         : accounts.FirstOrDefault(
@@ -257,12 +296,15 @@ public sealed class VaultService : IVaultService
                     {
                         int index = accounts.IndexOf(duplicate);
                         accounts.RemoveAt(index);
+                        accountIds.Remove(duplicate.Id);
+                        accountIds.Add(imported.Id);
                         duplicate.Dispose();
                         stagedAccount.SetSortOrder(index, _clock.UtcNow);
                         accounts.Insert(index, stagedAccount);
                         continue;
                     }
 
+                    accountIds.Add(imported.Id);
                     stagedAccount.SetSortOrder(accounts.Count, _clock.UtcNow);
                     accounts.Add(stagedAccount);
                 }
@@ -340,8 +382,11 @@ public sealed class VaultService : IVaultService
         throw new SafeApplicationException("Vault.NotFound", "The selected account no longer exists.");
 
     private static TotpAccount CloneAccount(TotpAccount account) =>
+        CloneAccount(account, account.Id);
+
+    private static TotpAccount CloneAccount(TotpAccount account, Guid id) =>
         new(
-            account.Id,
+            id,
             account.Issuer,
             account.AccountName,
             account.Secret,
@@ -352,6 +397,18 @@ public sealed class VaultService : IVaultService
             account.SortOrder,
             account.CreatedAtUtc,
             account.UpdatedAtUtc);
+
+    private static Guid CreateUniqueAccountId(HashSet<Guid> accountIds)
+    {
+        while (true)
+        {
+            Guid candidate = Guid.NewGuid();
+            if (accountIds.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
 
     private void EnsureState(params VaultState[] states)
     {

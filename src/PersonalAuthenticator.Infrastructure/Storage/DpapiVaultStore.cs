@@ -20,10 +20,23 @@ public sealed class DpapiVaultStore : IVaultStore
     private const int HeaderLength = 8 + 2 + 8 + 4 + 32;
     private const int MaximumVaultBytes = 64 * 1024 * 1024;
     private readonly ILogger<DpapiVaultStore> _logger;
+    private readonly Action<string> _prepareRestrictiveStorage;
 
     public DpapiVaultStore(ILogger<DpapiVaultStore> logger, string? baseDirectory = null)
+        : this(logger, baseDirectory, PrepareRestrictiveStorage)
     {
+    }
+
+    internal DpapiVaultStore(
+        ILogger<DpapiVaultStore> logger,
+        string? baseDirectory,
+        Action<string> prepareRestrictiveStorage)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(prepareRestrictiveStorage);
+
         _logger = logger;
+        _prepareRestrictiveStorage = prepareRestrictiveStorage;
         string directory = baseDirectory ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PersonalAuthenticator");
         VaultPath = Path.Combine(directory, "vault.pav");
@@ -114,6 +127,25 @@ public sealed class DpapiVaultStore : IVaultStore
     public async Task SaveAsync(IReadOnlyCollection<TotpAccount> accounts, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(accounts);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            _prepareRestrictiveStorage(VaultPath);
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+                UnauthorizedAccessException or
+                InvalidOperationException or
+                System.Security.SecurityException)
+        {
+            InfrastructureLog.VaultWriteFailed(_logger, exception, exception.GetType().Name);
+            throw new SafeApplicationException(
+                "Vault.SecurityFailed",
+                "The vault storage permissions could not be secured.",
+                exception);
+        }
+
         byte[] plaintext = VaultJsonSerializer.Serialize(accounts);
         byte[] protectedPayload = [];
         byte[] envelope = [];
@@ -127,7 +159,6 @@ public sealed class DpapiVaultStore : IVaultStore
                 retainPrevious: true,
                 overwriteExisting: true,
                 cancellationToken);
-            ApplyRestrictiveAcl(VaultPath);
             InfrastructureLog.VaultSaved(_logger, accounts.Count);
         }
         catch (IOException exception)
@@ -155,22 +186,57 @@ public sealed class DpapiVaultStore : IVaultStore
         return envelope;
     }
 
-    private static void ApplyRestrictiveAcl(string path)
+    private static void PrepareRestrictiveStorage(string vaultPath)
     {
+        string directory = Path.GetDirectoryName(vaultPath) ??
+            throw new InvalidOperationException("The vault path must include a directory.");
+        Directory.CreateDirectory(directory);
+
         using WindowsIdentity identity = WindowsIdentity.GetCurrent();
         SecurityIdentifier user = identity.User ??
             throw new InvalidOperationException("The current Windows user SID is unavailable.");
+
+        var directorySecurity = new DirectorySecurity();
+        ConfigureRestrictiveAcl(
+            directorySecurity,
+            user,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit);
+        new DirectoryInfo(directory).SetAccessControl(directorySecurity);
+
+        ApplyRestrictiveFileAclIfPresent(vaultPath, user);
+        ApplyRestrictiveFileAclIfPresent(vaultPath + ".previous", user);
+    }
+
+    private static void ApplyRestrictiveFileAclIfPresent(string path, SecurityIdentifier user)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
         var security = new FileSecurity();
+        ConfigureRestrictiveAcl(security, user, InheritanceFlags.None);
+        new FileInfo(path).SetAccessControl(security);
+    }
+
+    private static void ConfigureRestrictiveAcl(
+        FileSystemSecurity security,
+        SecurityIdentifier user,
+        InheritanceFlags inheritanceFlags)
+    {
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         security.SetOwner(user);
         security.AddAccessRule(new FileSystemAccessRule(
             user,
             FileSystemRights.FullControl,
+            inheritanceFlags,
+            PropagationFlags.None,
             AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             FileSystemRights.FullControl,
+            inheritanceFlags,
+            PropagationFlags.None,
             AccessControlType.Allow));
-        new FileInfo(path).SetAccessControl(security);
     }
 }

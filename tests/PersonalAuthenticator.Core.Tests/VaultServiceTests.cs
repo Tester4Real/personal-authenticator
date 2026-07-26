@@ -166,10 +166,98 @@ public sealed class VaultServiceTests
         Assert.Equal(2, service.Accounts.Count);
     }
 
-    private static TotpAccount CreateAccount(string name, byte discriminator = 0)
+    [Fact]
+    public async Task MergeImport_IdCollision_PreservesExistingAccount()
+    {
+        var store = new InMemoryVaultStore();
+        using var service = new VaultService(store, new FixedClock(), new DuplicateDetector());
+        await service.InitialiseAsync(unlock: true, TestContext.Current.CancellationToken);
+        Guid sharedId = Guid.NewGuid();
+        await service.AddAsync(
+            CreateAccount("existing", discriminator: 0, sharedId),
+            TestContext.Current.CancellationToken);
+        using TotpAccount imported = CreateAccount("imported", discriminator: 10, sharedId);
+
+        await service.ImportAsync(
+            [imported],
+            BackupImportMode.Merge,
+            TestContext.Current.CancellationToken);
+
+        TotpAccount retained = Assert.Single(service.Accounts);
+        Assert.Equal(sharedId, retained.Id);
+        Assert.Equal("existing", retained.AccountName);
+    }
+
+    [Fact]
+    public async Task MergeReplaceImport_IdCollision_ReplacesThatIdentity()
+    {
+        var store = new InMemoryVaultStore();
+        using var service = new VaultService(store, new FixedClock(), new DuplicateDetector());
+        await service.InitialiseAsync(unlock: true, TestContext.Current.CancellationToken);
+        Guid sharedId = Guid.NewGuid();
+        await service.AddAsync(
+            CreateAccount("existing", discriminator: 0, sharedId),
+            TestContext.Current.CancellationToken);
+        using TotpAccount imported = CreateAccount("imported", discriminator: 10, sharedId);
+
+        await service.ImportAsync(
+            [imported],
+            BackupImportMode.MergeReplaceDuplicates,
+            TestContext.Current.CancellationToken);
+
+        TotpAccount replacement = Assert.Single(service.Accounts);
+        Assert.Equal(sharedId, replacement.Id);
+        Assert.Equal("imported", replacement.AccountName);
+    }
+
+    [Fact]
+    public async Task MergeAddImport_IdCollision_PreservesBothWithUniqueIds()
+    {
+        var store = new InMemoryVaultStore();
+        using var service = new VaultService(store, new FixedClock(), new DuplicateDetector());
+        await service.InitialiseAsync(unlock: true, TestContext.Current.CancellationToken);
+        Guid sharedId = Guid.NewGuid();
+        await service.AddAsync(
+            CreateAccount("existing", discriminator: 0, sharedId),
+            TestContext.Current.CancellationToken);
+        using TotpAccount imported = CreateAccount("imported", discriminator: 10, sharedId);
+
+        await service.ImportAsync(
+            [imported],
+            BackupImportMode.MergeAddDuplicates,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, service.Accounts.Count);
+        Assert.Equal(2, service.Accounts.Select(account => account.Id).Distinct().Count());
+        Assert.Contains(service.Accounts, account => account.Id == sharedId && account.AccountName == "existing");
+        Assert.Contains(service.Accounts, account => account.Id != sharedId && account.AccountName == "imported");
+    }
+
+    [Fact]
+    public async Task ReplaceImport_RepeatedId_PreservesEveryAccountWithUniqueIds()
+    {
+        var store = new InMemoryVaultStore();
+        using var service = new VaultService(store, new FixedClock(), new DuplicateDetector());
+        await service.InitialiseAsync(unlock: true, TestContext.Current.CancellationToken);
+        Guid sharedId = Guid.NewGuid();
+        using TotpAccount first = CreateAccount("first", discriminator: 1, sharedId);
+        using TotpAccount second = CreateAccount("second", discriminator: 2, sharedId);
+
+        await service.ImportAsync(
+            [first, second],
+            BackupImportMode.Replace,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, service.Accounts.Count);
+        Assert.Equal(2, service.Accounts.Select(account => account.Id).Distinct().Count());
+        Assert.Contains(service.Accounts, account => account.Id == sharedId && account.AccountName == "first");
+        Assert.Contains(service.Accounts, account => account.Id != sharedId && account.AccountName == "second");
+    }
+
+    private static TotpAccount CreateAccount(string name, byte discriminator = 0, Guid? id = null)
     {
         byte[] secret = Enumerable.Range(1, 20).Select(index => (byte)(index + discriminator)).ToArray();
-        return new TotpAccount(Guid.NewGuid(), "Example", name, secret);
+        return new TotpAccount(id ?? Guid.NewGuid(), "Example", name, secret);
     }
 
     private sealed class FixedClock : IClock

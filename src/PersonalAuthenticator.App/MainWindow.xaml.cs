@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly AppWindow _appWindow;
     private DateTimeOffset _lastActivity = DateTimeOffset.UtcNow;
     private bool _initialised;
+    private bool _shutdownStarted;
     private bool _disposed;
 
     public MainWindow(
@@ -49,6 +50,14 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         ViewModel = viewModel;
         Root.DataContext = ViewModel;
+        Root.AddHandler(
+            UIElement.KeyDownEvent,
+            new KeyEventHandler(Root_KeyDown),
+            handledEventsToo: true);
+        Root.AddHandler(
+            UIElement.PointerPressedEvent,
+            new PointerEventHandler(Root_PointerPressed),
+            handledEventsToo: true);
         _parser = parser;
         _qrDecoder = qrDecoder;
         _lockMonitor = lockMonitor;
@@ -100,6 +109,19 @@ public sealed partial class MainWindow : Window, IDisposable
         Dispose();
     }
 
+    internal void BeginShutdown()
+    {
+        if (_shutdownStarted)
+        {
+            return;
+        }
+
+        _shutdownStarted = true;
+        Root.IsHitTestVisible = false;
+        _timer.Stop();
+        _lifetime.Cancel();
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -108,8 +130,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _disposed = true;
-        _timer.Stop();
-        _lifetime.Cancel();
+        BeginShutdown();
         Activated -= OnActivated;
         Closed -= OnClosed;
         _lockMonitor.LockRequested -= OnSystemLockRequested;

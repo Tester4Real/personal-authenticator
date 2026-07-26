@@ -159,7 +159,8 @@ internal static class VaultJsonSerializer
             if (Id == Guid.Empty ||
                 string.IsNullOrWhiteSpace(Issuer) ||
                 string.IsNullOrWhiteSpace(AccountName) ||
-                SecretBytes is null)
+                SecretBytes is null ||
+                !Enum.IsDefined(Algorithm))
             {
                 throw new SafeApplicationException("Vault.InvalidAccount", "The vault contains an invalid account.");
             }

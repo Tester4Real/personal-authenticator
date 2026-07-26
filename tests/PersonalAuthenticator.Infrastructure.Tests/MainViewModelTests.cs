@@ -70,6 +70,62 @@ public sealed class MainViewModelTests
         }
     }
 
+    [Fact]
+    public async Task RevealToggle_HidesCodeWhenCodesAreVisibleByDefault()
+    {
+        TestHarness harness = await TestHarness.CreateAsync();
+        using (harness)
+        {
+            TotpAccount account = CreateAccount("Example", "visible", 5);
+            await harness.ViewModel.AddAsync(account, DuplicateResolution.Cancel, CancellationToken.None);
+            AccountCardViewModel card = Assert.Single(harness.ViewModel.VisibleAccounts);
+
+            Assert.True(card.IsRevealed);
+            Assert.False(card.IsCodeHidden);
+            Assert.Equal("123 456", card.DisplayCode);
+
+            await harness.ViewModel.RevealAsync(card.Id, CancellationToken.None);
+
+            Assert.False(card.IsRevealed);
+            Assert.True(card.IsCodeHidden);
+            Assert.Equal("••• •••", card.DisplayCode);
+
+            await harness.ViewModel.RevealAsync(card.Id, CancellationToken.None);
+
+            Assert.True(card.IsRevealed);
+            Assert.False(card.IsCodeHidden);
+            Assert.Equal("123 456", card.DisplayCode);
+        }
+    }
+
+    [Fact]
+    public async Task SaveSettings_FailedPersistencePreservesRuntimeSettings()
+    {
+        TestHarness harness = await TestHarness.CreateAsync();
+        using (harness)
+        {
+            TotpAccount account = CreateAccount("Example", "settings", 6);
+            await harness.ViewModel.AddAsync(account, DuplicateResolution.Cancel, CancellationToken.None);
+            AppSettings original = harness.ViewModel.Settings;
+            harness.SettingsStore.FailSaves = true;
+            AppSettings replacement = original with
+            {
+                HideCodesByDefault = true,
+                ClipboardClearSeconds = 90,
+            };
+
+            await Assert.ThrowsAsync<IOException>(
+                () => harness.ViewModel.SaveSettingsAsync(replacement, CancellationToken.None));
+
+            Assert.Same(original, harness.ViewModel.Settings);
+            Assert.False(harness.ViewModel.Settings.HideCodesByDefault);
+            Assert.Equal(30, harness.ViewModel.Settings.ClipboardClearSeconds);
+            AccountCardViewModel card = Assert.Single(harness.ViewModel.VisibleAccounts);
+            Assert.True(card.IsRevealed);
+            Assert.Equal("123 456", card.DisplayCode);
+        }
+    }
+
     private static TotpAccount CreateAccount(string issuer, string name, byte discriminator) =>
         new(
             Guid.NewGuid(),
@@ -85,12 +141,14 @@ public sealed class MainViewModelTests
             VaultService vault,
             MainViewModel viewModel,
             MutableClock clock,
-            FakeClipboard clipboard)
+            FakeClipboard clipboard,
+            FakeSettingsStore settingsStore)
         {
             _vault = vault;
             ViewModel = viewModel;
             Clock = clock;
             Clipboard = clipboard;
+            SettingsStore = settingsStore;
         }
 
         public MainViewModel ViewModel { get; }
@@ -99,20 +157,23 @@ public sealed class MainViewModelTests
 
         public FakeClipboard Clipboard { get; }
 
+        public FakeSettingsStore SettingsStore { get; }
+
         public static async Task<TestHarness> CreateAsync()
         {
             var clock = new MutableClock { UtcNow = DateTimeOffset.FromUnixTimeSeconds(0) };
             var vault = new VaultService(new InMemoryStore(), clock, new DuplicateDetector());
             var clipboard = new FakeClipboard();
+            var settingsStore = new FakeSettingsStore();
             var viewModel = new MainViewModel(
                 vault,
                 new FakeTotpGenerator(),
                 clock,
                 clipboard,
                 new FakeVerification(),
-                new FakeSettingsStore());
+                settingsStore);
             await viewModel.InitialiseAsync(CancellationToken.None);
-            return new TestHarness(vault, viewModel, clock, clipboard);
+            return new TestHarness(vault, viewModel, clock, clipboard, settingsStore);
         }
 
         public void Dispose() => _vault.Dispose();
@@ -165,11 +226,18 @@ public sealed class MainViewModelTests
     {
         private AppSettings _settings = new() { StartUnlocked = true };
 
+        public bool FailSaves { get; set; }
+
         public Task<AppSettings> LoadAsync(CancellationToken cancellationToken) =>
             Task.FromResult(_settings);
 
         public Task SaveAsync(AppSettings settings, CancellationToken cancellationToken)
         {
+            if (FailSaves)
+            {
+                throw new IOException("Simulated settings save failure.");
+            }
+
             _settings = settings;
             return Task.CompletedTask;
         }

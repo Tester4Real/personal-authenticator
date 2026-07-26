@@ -22,7 +22,7 @@ Personal Authenticator is a Windows-only, fully local TOTP authenticator built w
 
 ## Screenshot
 
-![Verified Personal Authenticator main window](artifacts/manual-mainwindow-print.png)
+![Verified Personal Authenticator main window](docs/assets/mainwindow.png)
 
 This capture was taken from the live Release x64 development build.
 
@@ -119,7 +119,7 @@ Verify formatting:
 dotnet format .\PersonalAuthenticator.sln --verify-no-changes
 ```
 
-The final observed test run passed 70 tests: 34 Core tests and 36 Infrastructure/ViewModel tests. These cover strict URI and percent-encoding parsing, secret-buffer disposal, duplicate fingerprints, transactional vault failure/reload paths, all four backup-import policies, RFC 6238 TOTP vectors, DPAPI persistence, portable-backup authentication/tamper/overwrite/length cases, bounded non-seekable QR input, clipboard ownership and cancellation, logging-policy markers, and ViewModel workflows.
+The final observed test run passed 81 tests: 38 Core tests and 43 Infrastructure/ViewModel tests. These cover strict URI and percent-encoding parsing, secret-buffer disposal, duplicate fingerprints and identifier collisions, transactional vault and pre-commit ACL failure paths, all four backup-import policies, malformed persisted algorithms, RFC 6238 TOTP vectors, DPAPI persistence, portable-backup authentication/tamper/overwrite/length cases, bounded non-seekable QR input, clipboard ownership/cancellation/natural cleanup, logging-policy markers, settings-save failures, reveal/hide behavior, and ViewModel workflows.
 
 `dotnet format .\PersonalAuthenticator.sln --verify-no-changes` also passed.
 

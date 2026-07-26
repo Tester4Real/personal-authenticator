@@ -236,8 +236,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     public async Task SaveSettingsAsync(AppSettings settings, CancellationToken cancellationToken)
     {
-        Settings = settings;
         await _settingsStore.SaveAsync(settings, cancellationToken);
+        Settings = settings;
         RebuildVisibleAccounts();
         RefreshCodes();
         Notify("Settings saved", "Your preferences were updated.");

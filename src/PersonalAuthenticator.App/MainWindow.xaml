@@ -8,9 +8,7 @@
 
   <Grid
       x:Name="Root"
-      Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
-      KeyDown="Root_KeyDown"
-      PointerPressed="Root_PointerPressed">
+      Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
     <Grid.Resources>
       <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
       <converters:BooleanToVisibilityConverter x:Key="InverseBooleanToVisibility" Invert="True" />

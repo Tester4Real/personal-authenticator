@@ -12,10 +12,7 @@ public sealed class SecureClipboardService : ISecureClipboardService
     private readonly ILogger<SecureClipboardService> _logger;
     private readonly IClipboardAdapter _clipboard;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private CancellationTokenSource? _pendingClear;
-    private Task _pendingTask = Task.CompletedTask;
-    private string? _pendingCode;
-    private string? _pendingOwnershipMarker;
+    private PendingClear? _pendingClear;
     private bool _disposed;
 
     public SecureClipboardService(ILogger<SecureClipboardService> logger)
@@ -33,7 +30,7 @@ public sealed class SecureClipboardService : ISecureClipboardService
 
     public async Task CopyCodeAsync(string code, TimeSpan clearAfter, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed), this);
         if (code.Length is not (6 or 8) || code.Any(character => !char.IsAsciiDigit(character)))
         {
             throw new ArgumentException("Only a current one-time code may be copied.", nameof(code));
@@ -44,6 +41,7 @@ public sealed class SecureClipboardService : ISecureClipboardService
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed), this);
             cancellationToken.ThrowIfCancellationRequested();
             await CancelPendingClearCoreAsync(clearOwnedClipboard: true);
             string ownershipMarker = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
@@ -58,14 +56,9 @@ public sealed class SecureClipboardService : ISecureClipboardService
                 throw new SafeApplicationException("Clipboard.WriteFailed", "The code could not be copied.", exception);
             }
 
-            _pendingCode = code;
-            _pendingOwnershipMarker = ownershipMarker;
-            _pendingClear = new CancellationTokenSource();
-            _pendingTask = ClearConditionallyAfterDelayAsync(
-                code,
-                ownershipMarker,
-                clearAfter,
-                _pendingClear.Token);
+            var pendingClear = new PendingClear(code, ownershipMarker);
+            Interlocked.Exchange(ref _pendingClear, pendingClear);
+            pendingClear.Task = ClearConditionallyAfterDelayAsync(pendingClear, clearAfter);
         }
         finally
         {
@@ -75,7 +68,7 @@ public sealed class SecureClipboardService : ISecureClipboardService
 
     public async Task CancelPendingClearAsync()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed))
         {
             return;
         }
@@ -83,6 +76,11 @@ public sealed class SecureClipboardService : ISecureClipboardService
         await _gate.WaitAsync();
         try
         {
+            if (Volatile.Read(ref _disposed))
+            {
+                return;
+            }
+
             await CancelPendingClearCoreAsync(clearOwnedClipboard: true);
         }
         finally
@@ -93,64 +91,78 @@ public sealed class SecureClipboardService : ISecureClipboardService
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed))
         {
             return;
         }
 
-        await CancelPendingClearAsync();
-        _disposed = true;
-        _gate.Dispose();
+        await _gate.WaitAsync();
+        try
+        {
+            if (Volatile.Read(ref _disposed))
+            {
+                return;
+            }
+
+            Volatile.Write(ref _disposed, true);
+            await CancelPendingClearCoreAsync(clearOwnedClipboard: true);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private async Task ClearConditionallyAfterDelayAsync(
-        string expectedCode,
-        string expectedOwnershipMarker,
-        TimeSpan delay,
-        CancellationToken cancellationToken)
+        PendingClear pendingClear,
+        TimeSpan delay)
     {
         try
         {
-            await Task.Delay(delay, cancellationToken);
-            await ClearIfOwnedAsync(expectedCode, expectedOwnershipMarker);
+            await Task.Delay(delay, pendingClear.Cancellation.Token);
+            await ClearIfOwnedAsync(pendingClear.Code, pendingClear.OwnershipMarker);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (pendingClear.Cancellation.IsCancellationRequested)
         {
         }
         catch (Exception exception)
         {
             InfrastructureLog.ClipboardClearFailed(_logger, exception.GetType().Name);
         }
+        finally
+        {
+            PendingClear? released = Interlocked.CompareExchange(
+                ref _pendingClear,
+                null,
+                pendingClear);
+            if (ReferenceEquals(released, pendingClear))
+            {
+                pendingClear.Dispose();
+            }
+        }
     }
 
     private async Task CancelPendingClearCoreAsync(bool clearOwnedClipboard)
     {
-        CancellationTokenSource? source = _pendingClear;
-        Task pendingTask = _pendingTask;
-        string? expectedCode = _pendingCode;
-        string? expectedOwnershipMarker = _pendingOwnershipMarker;
-        _pendingClear = null;
-        _pendingTask = Task.CompletedTask;
-        _pendingCode = null;
-        _pendingOwnershipMarker = null;
-        if (source is not null)
+        PendingClear? pendingClear = Interlocked.Exchange(ref _pendingClear, null);
+        if (pendingClear is null)
         {
-            await source.CancelAsync();
-            try
-            {
-                await pendingTask;
-            }
-            finally
-            {
-                source.Dispose();
-            }
+            return;
         }
 
-        if (clearOwnedClipboard &&
-            expectedCode is not null &&
-            expectedOwnershipMarker is not null)
+        await pendingClear.Cancellation.CancelAsync();
+        try
         {
-            await ClearIfOwnedAsync(expectedCode, expectedOwnershipMarker);
+            await pendingClear.Task;
+        }
+        finally
+        {
+            pendingClear.Dispose();
+        }
+
+        if (clearOwnedClipboard)
+        {
+            await ClearIfOwnedAsync(pendingClear.Code, pendingClear.OwnershipMarker);
         }
     }
 
@@ -172,6 +184,29 @@ public sealed class SecureClipboardService : ISecureClipboardService
         catch (COMException exception)
         {
             InfrastructureLog.ClipboardClearFailed(_logger, exception.GetType().Name);
+        }
+    }
+
+    private sealed class PendingClear(
+        string code,
+        string ownershipMarker) : IDisposable
+    {
+        private int _disposed;
+
+        public string Code { get; } = code;
+
+        public string OwnershipMarker { get; } = ownershipMarker;
+
+        public CancellationTokenSource Cancellation { get; } = new();
+
+        public Task Task { get; set; } = Task.CompletedTask;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                Cancellation.Dispose();
+            }
         }
     }
 }
