@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Personal Authenticator shield and lock">
+  <defs>
+    <linearGradient id="background" x1="32" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6D8CFF"/>
+      <stop offset="1" stop-color="#3957D8"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="#0E1A35"/>
+  <path d="M128 34 207 66v57c0 51-31 83-79 103-48-20-79-52-79-103V66l79-32Z" fill="url(#background)"/>
+  <path d="M91 121v-15c0-22 16-38 37-38s37 16 37 38v15" fill="none" stroke="#fff" stroke-width="15" stroke-linecap="round"/>
+  <rect x="76" y="113" width="104" height="76" rx="19" fill="#fff"/>
+  <circle cx="128" cy="148" r="11" fill="#3957D8"/>
+  <path d="M128 156v15" stroke="#3957D8" stroke-width="9" stroke-linecap="round"/>
+</svg>

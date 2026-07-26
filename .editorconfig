@@ -1,0 +1,33 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{csproj,props,targets,xaml,xml}]
+indent_size = 2
+
+[*.cs]
+dotnet_sort_system_directives_first = true
+csharp_new_line_before_open_brace = all
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_prefer_primary_constructors = false:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA1031.severity = none
+dotnet_diagnostic.CA1303.severity = none
+dotnet_diagnostic.CA1416.severity = none
+dotnet_diagnostic.CA1510.severity = none
+dotnet_diagnostic.CA2007.severity = none
+
+[*.xaml]
+trim_trailing_whitespace = false
+
+[tests/**/*.cs]
+# xUnit test names use underscores to separate the action, condition, and expected result.
+dotnet_diagnostic.CA1707.severity = none

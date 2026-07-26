@@ -1,0 +1,28 @@
+.vs/
+.idea/
+.serena/
+**/bin/
+**/obj/
+**/AppPackages/
+**/BundleArtifacts/
+**/Generated Files/
+artifacts/
+TestResults/
+*.user
+*.suo
+*.pfx
+*.cer
+*.snk
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.appinstaller
+publish/
+
+# Local authenticator data and portable backups
+*.pab
+vault.pav
+vault.pav.previous
+settings.json
+startup.log

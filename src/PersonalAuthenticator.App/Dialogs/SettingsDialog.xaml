@@ -1,0 +1,125 @@
+<ContentDialog
+    x:Class="PersonalAuthenticator.App.Dialogs.SettingsDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Settings"
+    CloseButtonText="Close"
+    DefaultButton="Primary"
+    PrimaryButtonClick="Dialog_PrimaryButtonClick"
+    PrimaryButtonText="Save settings">
+
+  <Grid Width="660" MinHeight="500">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <TabView Grid.Row="0" IsAddTabButtonVisible="False">
+      <TabViewItem Header="General" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="14">
+            <ComboBox x:Name="ThemeBox" Header="App theme">
+              <ComboBoxItem Content="Use Windows setting" />
+              <ComboBoxItem Content="Light" />
+              <ComboBoxItem Content="Dark" />
+            </ComboBox>
+            <NumberBox
+                x:Name="AutoLockBox"
+                Header="Lock after inactivity (minutes, 0 disables)"
+                Maximum="1440"
+                Minimum="0"
+                SmallChange="1" />
+            <ToggleSwitch x:Name="LockMinimisedToggle" Header="Lock when minimised" />
+            <ToggleSwitch x:Name="LockWindowsToggle" Header="Lock when Windows locks or suspends" />
+            <ToggleSwitch x:Name="HideCodesToggle" Header="Hide codes until revealed" />
+            <ToggleSwitch x:Name="StartUnlockedToggle" Header="Try to unlock on launch" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
+      <TabViewItem Header="Security" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="14">
+            <NumberBox
+                x:Name="ClipboardDelayBox"
+                Header="Clear copied codes after (seconds)"
+                Maximum="300"
+                Minimum="5"
+                SmallChange="5" />
+            <ToggleSwitch
+                x:Name="VerificationToggle"
+                Header="Require Windows user verification before revealing or copying codes" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="Windows Hello is a user-presence check. DPAPI still performs vault encryption. If Hello is unavailable, Windows account protection remains and the app will not lock you out."
+                Severity="Informational" />
+            <TextBlock
+                Text="Clipboard clearing only reduces exposure time. Other software can still read a code while it is present."
+                TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
+      <TabViewItem Header="Backup &amp; restore" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="12">
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="If you lose both this password and your service recovery codes, your accounts may be unrecoverable."
+                Severity="Warning" />
+            <PasswordBox
+                x:Name="BackupPasswordBox"
+                Header="Backup password (12+ characters)"
+                PasswordChar="●" />
+            <PasswordBox
+                x:Name="ConfirmPasswordBox"
+                Header="Confirm backup password"
+                PasswordChar="●" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Click="ExportButton_Click" Content="Export encrypted backup…" />
+              <Button Click="ImportButton_Click" Content="Import encrypted backup…" />
+            </StackPanel>
+            <ComboBox
+                x:Name="ImportModeBox"
+                Header="Restore behaviour"
+                SelectedIndex="0">
+              <ComboBoxItem Content="Merge and skip duplicates" />
+              <ComboBoxItem Content="Merge and replace matching accounts" />
+              <ComboBoxItem Content="Merge and keep duplicates" />
+              <ComboBoxItem Content="Replace current vault exactly" />
+            </ComboBox>
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
+      <TabViewItem Header="About" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="10">
+            <TextBlock FontSize="24" FontWeight="SemiBold" Text="Personal Authenticator" />
+            <TextBlock Text="Version 1.0.0 · Local-only TOTP for Windows" />
+            <TextBlock
+                Text="No analytics, telemetry, advertisements, cloud sync, or network API."
+                TextWrapping="Wrap" />
+            <TextBlock FontWeight="SemiBold" Text="Third-party components" />
+            <TextBlock
+                Text="Windows App SDK and WebView2 (Microsoft Software License Terms) · .NET and Microsoft.Extensions (MIT) · CommunityToolkit.Mvvm (MIT) · Otp.NET (MIT) · ZXing.Net (Apache-2.0)"
+                TextWrapping="Wrap" />
+            <TextBlock
+                Text="Dependency and licence details are in THIRD-PARTY-NOTICES.md beside the application executable."
+                TextWrapping="Wrap" />
+            <TextBlock
+                Text="Running an authenticator on the same PC used to sign in reduces separation between factors. Malware running as your Windows user can access decrypted data and clipboard contents."
+                TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+    </TabView>
+    <InfoBar
+        x:Name="SettingsStatus"
+        Grid.Row="1"
+        Margin="8,10,8,0"
+        IsClosable="True"
+        IsOpen="False" />
+  </Grid>
+</ContentDialog>

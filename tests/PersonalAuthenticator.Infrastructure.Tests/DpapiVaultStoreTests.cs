@@ -1,0 +1,75 @@
+using System.Security.Cryptography;
+using Microsoft.Extensions.Logging.Abstractions;
+using PersonalAuthenticator.Core.Domain;
+using PersonalAuthenticator.Core.Exceptions;
+using PersonalAuthenticator.Infrastructure.Storage;
+
+namespace PersonalAuthenticator.Infrastructure.Tests;
+
+public sealed class DpapiVaultStoreTests : IDisposable
+{
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), $"pa-tests-{Guid.NewGuid():N}");
+
+    [Fact]
+    public async Task SaveAndLoad_MultipleAccounts_RoundTripsWithoutPlaintext()
+    {
+        var store = new DpapiVaultStore(NullLogger<DpapiVaultStore>.Instance, _directory);
+        byte[] secret = RandomNumberGenerator.GetBytes(20);
+        using var first = new TotpAccount(Guid.NewGuid(), "PrivateIssuerMarker", "alice", secret);
+        using var second = new TotpAccount(Guid.NewGuid(), "Another", "bob", RandomNumberGenerator.GetBytes(32), TotpAlgorithm.Sha256, 8);
+
+        await store.SaveAsync([first, second], TestContext.Current.CancellationToken);
+        byte[] persisted = await File.ReadAllBytesAsync(store.VaultPath, TestContext.Current.CancellationToken);
+        Assert.False(persisted.AsSpan().IndexOf(secret) >= 0);
+        Assert.DoesNotContain("PrivateIssuerMarker"u8.ToArray(), persisted);
+
+        IReadOnlyList<TotpAccount> loaded = await store.LoadAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.Equal(2, loaded.Count);
+            Assert.Equal(secret, loaded[0].Secret.ToArray());
+        }
+        finally
+        {
+            foreach (TotpAccount account in loaded)
+            {
+                account.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CorruptedCiphertext_IsRejected()
+    {
+        var store = new DpapiVaultStore(NullLogger<DpapiVaultStore>.Instance, _directory);
+        using var account = new TotpAccount(Guid.NewGuid(), "Example", "account", RandomNumberGenerator.GetBytes(20));
+        await store.SaveAsync([account], TestContext.Current.CancellationToken);
+        byte[] bytes = await File.ReadAllBytesAsync(store.VaultPath, TestContext.Current.CancellationToken);
+        bytes[^1] ^= 0x40;
+        await File.WriteAllBytesAsync(store.VaultPath, bytes, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<SafeApplicationException>(
+            () => store.LoadAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task InvalidVersion_IsRejected()
+    {
+        var store = new DpapiVaultStore(NullLogger<DpapiVaultStore>.Instance, _directory);
+        await store.SaveAsync([], TestContext.Current.CancellationToken);
+        byte[] bytes = await File.ReadAllBytesAsync(store.VaultPath, TestContext.Current.CancellationToken);
+        bytes[8] = 99;
+        await File.WriteAllBytesAsync(store.VaultPath, bytes, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<SafeApplicationException>(
+            () => store.LoadAsync(TestContext.Current.CancellationToken));
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_directory))
+        {
+            Directory.Delete(_directory, recursive: true);
+        }
+    }
+}

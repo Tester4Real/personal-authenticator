@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>PersonalAuthenticator.Core</RootNamespace>
+    <AssemblyName>PersonalAuthenticator.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Otp.NET" />
+  </ItemGroup>
+</Project>

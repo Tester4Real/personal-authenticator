@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>PersonalAuthenticator.Infrastructure</RootNamespace>
+    <AssemblyName>PersonalAuthenticator.Infrastructure</AssemblyName>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PersonalAuthenticator.Core\PersonalAuthenticator.Core.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" />
+    <PackageReference Include="Otp.NET" />
+    <PackageReference Include="System.IO.FileSystem.AccessControl" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+    <PackageReference Include="ZXing.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PersonalAuthenticator.Infrastructure.Tests" />
+  </ItemGroup>
+</Project>
