@@ -254,7 +254,7 @@ They must not contain secrets, OTPs, provisioning URIs, QR payloads, backup pass
 
 The XAML startup diagnostic at `%LOCALAPPDATA%\PersonalAuthenticator\startup.log` records timestamp, exception type, HRESULT, and exception message. It executes before vault initialization and must remain restricted to startup/XAML details.
 
-There is no application analytics, telemetry, remote logging, crash upload, HTTP client, or cloud synchronization.
+There is no application analytics, telemetry, remote logging, crash upload, HTTP client, GitHub client, or token handling. Optional Phase 4 local-folder synchronisation exchanges only authenticated ciphertext through a user-selected filesystem path; its protocol and limitations are documented in `LOCAL_SYNC_PROTOCOL.md`.
 
 The published x64 process owned zero TCP and zero UDP endpoints during the
 observed responsiveness run. That point-in-time process check supports, but

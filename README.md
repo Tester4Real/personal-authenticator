@@ -1,6 +1,6 @@
 # Personal Authenticator
 
-Personal Authenticator is a Windows-only, fully local TOTP authenticator built with .NET 10 and WinUI 3. It imports standard `otpauth://totp/...` setup URIs, QR images, or manual account details; generates six- or eight-digit codes; and stores the complete sensitive vault under the current Windows user's DPAPI protection.
+Personal Authenticator is a Windows-only, local-first TOTP authenticator built with .NET 10 and WinUI 3. It imports standard `otpauth://totp/...` setup URIs, QR images, or manual account details; generates six- or eight-digit codes; and stores the complete sensitive vault under the current Windows user's DPAPI protection.
 
 > [!WARNING]
 > The published Release x64 application launched, rendered, and remained responsive on the development machine. Both x64 and ARM64 self-contained publish folders passed the repository's resource/legal-file checks. This is still security-sensitive software: re-run the release checklist on the release commit and keep provider recovery methods. Clean-machine deployment, ARM64 execution, MSIX, and signing validation remain outstanding.
@@ -18,8 +18,9 @@ Personal Authenticator is a Windows-only, fully local TOTP authenticator built w
 - Clipboard history/roaming suppression, random per-copy ownership markers, delayed conditional clearing, and immediate conditional clearing on lock/exit
 - Portable `.pab` backups using PBKDF2-HMAC-SHA-512 and AES-256-GCM
 - Alternating verified Recovery-A/Recovery-B bundles using Argon2id and AES-256-GCM
+- Optional encrypted local-folder synchronisation between Windows installations, with an immutable operation log, transactional outbox, deterministic merge, and explicit conflict resolution
 - Four whole-import restore policies: merge/skip, merge/replace matches, merge/keep duplicates, or exact replacement
-- No application HTTP client, cloud sync, analytics, advertisements, telemetry, or crash upload
+- No GitHub/API synchronisation, analytics, advertisements, telemetry, or crash upload; local-folder sync is optional and disabled until configured
 
 ## Screenshot
 
@@ -120,7 +121,7 @@ Verify formatting:
 dotnet format .\PersonalAuthenticator.sln --verify-no-changes
 ```
 
-The final observed test run passed 129 tests: 45 Core tests and 84 Infrastructure/ViewModel tests. These cover strict URI and percent-encoding parsing, secret-buffer disposal, duplicate fingerprints and identifier collisions, transactional vault and pre-commit ACL failure paths, all four backup-import policies, malformed persisted algorithms, RFC 6238 TOTP vectors, DPAPI persistence, portable-backup authentication/tamper/overwrite/length cases, bounded non-seekable QR input, clipboard ownership/cancellation/natural cleanup, logging-policy markers, settings-save failures, reveal/hide behavior, and ViewModel workflows.
+The final observed test run passed 145 tests: 45 Core tests and 100 Infrastructure/ViewModel tests. These include two simulated Windows devices, offline/concurrent changes, duplicate/reordered/missing operations, corruption quarantine, interrupted and disk-full uploads, every secret-conflict resolution, and state rebuild from operations.
 
 `dotnet format .\PersonalAuthenticator.sln --verify-no-changes` also passed.
 
@@ -147,6 +148,10 @@ By default, application state is stored beneath:
 | --- | --- | --- |
 | `vault.pav` | Complete account payload, including secrets | DPAPI `CurrentUser`; versioned binary envelope; restricted final-file ACL |
 | `vault.pav.previous` | Previous encrypted vault produced during atomic replacement | Still DPAPI ciphertext; retained for recovery, with no automatic restore UI |
+| `vault-v2.db` | Encrypted v2 records, immutable encrypted operations, outbox, causal heads, and conflicts | SQLite records encrypted with a random DPAPI-protected root key |
+| `vault-v2.key` | v2 vault root key | DPAPI `CurrentUser` |
+| `sync-device-id.dat` | Stable Windows sync device ID | DPAPI `CurrentUser` |
+| `local-folder-sync.dat` | Selected folder, repository/generation IDs, derived sync key, last success | DPAPI `CurrentUser`; never contains the sync password |
 | `settings.json` | Theme, lock, reveal, and clipboard preferences | Plaintext by design; must never contain account secrets |
 | `startup.log` | Optional safe XAML-startup diagnostic | Created only after a startup failure; contains error type, HRESULT, and exception message before the vault is loaded |
 
@@ -197,6 +202,12 @@ The v2 vault adds a separate disaster-recovery workflow in **Settings → Recove
 
 Recovery health shows the exact number of committed vault changes since the last completely verified bundle and warns after 20 changes or 30 days. Restore writes a unique replacement database and DPAPI key, reopens and verifies every record, and only then atomically changes the active-vault selector. The previous database, key, and selector rollback copy are retained; the app never automatically deletes the old vault.
 
+## Optional local-folder sync
+
+Open **Settings → Local sync**, select a folder visible to each Windows installation, and configure the same 12+ character sync password. Local changes always commit first and remain queued if the folder is unavailable. **Sync now** uploads verified encrypted operation objects, downloads all bounded objects, deterministically rebuilds state, and reports pending operations or conflicts. Secret conflicts retain every version until **Keep A**, **Keep B**, **Keep both**, or **Separate accounts** is chosen.
+
+The folder is optional and is never the primary database or only recovery method. It contains no plaintext secret or setup URI. Phase 4 has no GitHub API code or token. See [docs/LOCAL_SYNC_PROTOCOL.md](docs/LOCAL_SYNC_PROTOCOL.md).
+
 ## Publish
 
 The app project declares `win-x64` and `win-arm64`, `SelfContained=true`,
@@ -243,7 +254,9 @@ MSIX must be signed with a certificate whose private key is never committed.
 - Automated hardening coverage and x64 launch/responsiveness checks passed, but every security workflow should still be repeated manually on the final release commit.
 - Clean-machine self-contained deployment and ARM64 execution are unverified.
 - No MSIX installer, update mechanism, or code-signing workflow is implemented.
-- TOTP only: no HOTP, proprietary push approval, passkeys, provider login, or cloud sync.
+- TOTP only: no HOTP, proprietary push approval, passkeys, provider login, or GitHub/API sync.
+- Phase 4 local-folder sync is manual, has no remote rollback detection/compaction/device revocation/key rotation, and trusts the folder transport only for availability.
+- Recovery-A/B currently restores materialised records, not the Phase 4 operation log or sync configuration; a restore starts a new sync history after explicit reconfiguration.
 - QR drag-and-drop is not implemented; supported paths are file picker and clipboard.
 - The program does not synchronize time over a network. It only warns after detecting an unexpected local wall-clock jump.
 - Windows user verification is a presence gate, not a cryptographic vault key. If unavailable or not configured, the implementation falls back to DPAPI and allows the operation.
@@ -262,6 +275,7 @@ MSIX must be signed with a certificate whose private key is never committed.
 - [Security model](docs/SECURITY.md)
 - [Portable backup format](docs/BACKUP_FORMAT.md)
 - [Recovery A/B format and safety rules](docs/RECOVERY_FORMAT.md)
+- [Windows v2 local sync protocol](docs/LOCAL_SYNC_PROTOCOL.md)
 - [Dependencies and licences](docs/DEPENDENCIES.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.md)
 - [Changelog](CHANGELOG.md)

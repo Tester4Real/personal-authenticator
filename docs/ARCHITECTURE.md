@@ -2,7 +2,7 @@
 
 ## Goals and constraints
 
-Personal Authenticator is a single-user, Windows-only desktop application. Its primary constraints are local-only operation, testable domain logic, strict import validation, no plaintext secret persistence, and clear separation between Windows/WinUI code and portable business rules.
+Personal Authenticator is a single-user, Windows-only, local-first desktop application. Its primary constraints are complete offline operation, optional encrypted sync, testable domain logic, strict import validation, no plaintext secret persistence, and clear separation between Windows/WinUI code and portable business rules.
 
 The solution uses constructor injection and one composition root in `PersonalAuthenticator.App/App.xaml.cs`. Business behavior is accessed through Core interfaces; Infrastructure supplies Windows and cryptographic implementations. There is no global service locator used by business code.
 
@@ -12,7 +12,7 @@ The solution uses constructor injection and one composition root in `PersonalAut
 | --- | --- |
 | `PersonalAuthenticator.App` | WinUI 3 views, dialogs, ViewModels, a shared UI timer, theming, notifications, accessibility bindings, window/session lifecycle handling, and dependency-injection registration |
 | `PersonalAuthenticator.Core` | Domain objects, vault state machine, strict provisioning parser, duplicate detection, sensitive-buffer ownership, clocks, and all boundary interfaces; no WinUI dependency |
-| `PersonalAuthenticator.Infrastructure` | Otp.NET adapter, encrypted SQLite v2 vault, DPAPI keys, atomic files, portable backup encryption, Argon2id/AES-GCM Recovery-A/B, local ZXing QR decoding, clipboard behavior, settings persistence, Windows user verification/session events, and structured logging |
+| `PersonalAuthenticator.Infrastructure` | Otp.NET adapter, encrypted SQLite v2 vault and immutable operation log, DPAPI keys/device identity, transactional outbox, Argon2id/AES-GCM local-folder sync and Recovery-A/B, atomic files, portable backup encryption, local ZXing QR decoding, clipboard behavior, settings persistence, Windows user verification/session events, and structured logging |
 | `PersonalAuthenticator.Core.Tests` | Parser, sensitive-buffer, and vault-service tests |
 | `PersonalAuthenticator.Infrastructure.Tests` | RFC TOTP, DPAPI, portable-backup, logging-policy, and ViewModel tests |
 

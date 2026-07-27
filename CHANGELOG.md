@@ -10,6 +10,8 @@ Initial implementation of the local Windows authenticator.
 
 Windows v2 Phase 3 adds alternating Argon2id/AES-GCM Recovery-A and Recovery-B bundles, complete post-write verification, exact recovery-health change counts and age warnings, and corruption recovery through an independently verified replacement database/key before atomic pointer activation.
 
+Windows v2 Phase 4 adds the schema-4 immutable encrypted operation log, transactional outbox, Windows device sequences and causal ordering, deterministic operation replay, encrypted local-folder transport, conflict preservation/resolution, and the Windows local-sync settings UI. It intentionally adds no GitHub API or token support.
+
 ### Added
 
 - WinUI 3 Fluent desktop shell with Mica fallback, custom title bar, system/light/dark themes, search, favourites, account cards, empty/locked states, accessible countdown text, and InfoBar notifications
