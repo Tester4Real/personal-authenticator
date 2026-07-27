@@ -783,25 +783,59 @@ public sealed partial class VersionedVaultStore
             configuration.Branch,
             configuration.PathPrefix,
             cancellationToken);
-        HashSet<Guid> remoteIds = entries
+        Dictionary<Guid, GitHubRemoteEntry> remoteOperations = entries
             .Where(item => item.Path.Contains("/objects/", StringComparison.Ordinal))
-            .Select(item => ParseOperationId(item.Path))
-            .ToHashSet();
-        if (state.SerializedOperations
-            .Select(bytes => SyncOperationSerializer.Deserialize(bytes))
-            .Any(operation =>
-            {
-                using (operation)
-                {
-                    return !remoteIds.Contains(operation.Id);
-                }
-            }))
+            .ToDictionary(item => ParseOperationId(item.Path));
+        foreach (byte[] expectedBytes in state.SerializedOperations)
         {
-            throw new SafeApplicationException(
-                "GitHub.ReplacementVerificationFailed",
-                "The replacement repository did not contain complete operation coverage.");
+            using SyncOperation expected =
+                SyncOperationSerializer.Deserialize(expectedBytes);
+            if (!remoteOperations.TryGetValue(
+                    expected.Id,
+                    out GitHubRemoteEntry? entry))
+            {
+                throw ReplacementVerificationFailed();
+            }
+
+            using GitHubRemoteFile remote =
+                await client.GetFileAsync(
+                    configuration.Owner,
+                    configuration.Repository,
+                    entry.Path,
+                    configuration.Branch,
+                    etag: null,
+                    cancellationToken) ??
+                throw ReplacementVerificationFailed();
+            if (!string.Equals(remote.Sha, entry.Sha, StringComparison.Ordinal))
+            {
+                throw ReplacementVerificationFailed();
+            }
+
+            using SyncOperation reopened =
+                GitHubRemoteProtocol.DecryptOperation(
+                    configuration,
+                    remote.Content);
+            byte[] actualBytes = SyncOperationSerializer.Serialize(reopened);
+            try
+            {
+                if (!CryptographicOperations.FixedTimeEquals(
+                        expectedBytes,
+                        actualBytes))
+                {
+                    throw ReplacementVerificationFailed();
+                }
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(actualBytes);
+            }
         }
     }
+
+    private static SafeApplicationException ReplacementVerificationFailed() =>
+        new(
+            "GitHub.ReplacementVerificationFailed",
+            "The replacement repository failed encrypted operation, hash, or coverage verification.");
 
     private static async Task UploadIndexesAsync(
         IGitHubApiClient client,
