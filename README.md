@@ -17,6 +17,7 @@ Personal Authenticator is a Windows-only, fully local TOTP authenticator built w
 - Optional Windows user verification before unlock, reveal, or copy when the OS capability is available
 - Clipboard history/roaming suppression, random per-copy ownership markers, delayed conditional clearing, and immediate conditional clearing on lock/exit
 - Portable `.pab` backups using PBKDF2-HMAC-SHA-512 and AES-256-GCM
+- Alternating verified Recovery-A/Recovery-B bundles using Argon2id and AES-256-GCM
 - Four whole-import restore policies: merge/skip, merge/replace matches, merge/keep duplicates, or exact replacement
 - No application HTTP client, cloud sync, analytics, advertisements, telemetry, or crash upload
 
@@ -119,7 +120,7 @@ Verify formatting:
 dotnet format .\PersonalAuthenticator.sln --verify-no-changes
 ```
 
-The final observed test run passed 81 tests: 38 Core tests and 43 Infrastructure/ViewModel tests. These cover strict URI and percent-encoding parsing, secret-buffer disposal, duplicate fingerprints and identifier collisions, transactional vault and pre-commit ACL failure paths, all four backup-import policies, malformed persisted algorithms, RFC 6238 TOTP vectors, DPAPI persistence, portable-backup authentication/tamper/overwrite/length cases, bounded non-seekable QR input, clipboard ownership/cancellation/natural cleanup, logging-policy markers, settings-save failures, reveal/hide behavior, and ViewModel workflows.
+The final observed test run passed 129 tests: 45 Core tests and 84 Infrastructure/ViewModel tests. These cover strict URI and percent-encoding parsing, secret-buffer disposal, duplicate fingerprints and identifier collisions, transactional vault and pre-commit ACL failure paths, all four backup-import policies, malformed persisted algorithms, RFC 6238 TOTP vectors, DPAPI persistence, portable-backup authentication/tamper/overwrite/length cases, bounded non-seekable QR input, clipboard ownership/cancellation/natural cleanup, logging-policy markers, settings-save failures, reveal/hide behavior, and ViewModel workflows.
 
 `dotnet format .\PersonalAuthenticator.sln --verify-no-changes` also passed.
 
@@ -185,6 +186,17 @@ The choice applies to the whole import; there is no per-account conflict report.
 
 Keep provider recovery codes separately. Losing both the backup password and all provider recovery options can permanently lock you out. The exact format is documented in [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md).
 
+## Verified Recovery-A and Recovery-B
+
+The v2 vault adds a separate disaster-recovery workflow in **Settings → Recovery A/B**. It does not replace the existing `.pab` import/export feature.
+
+1. Unlock a v2 vault and enter a recovery password of at least 12 characters.
+2. Choose a folder. The app writes the inactive A/B slot with Argon2id and AES-256-GCM.
+3. Before recording it as healthy, the app reopens the new file, derives its key again, decrypts it, and validates every account, secret version, and history relationship.
+4. Repeat periodically. The next successful recovery alternates to the other slot.
+
+Recovery health shows the exact number of committed vault changes since the last completely verified bundle and warns after 20 changes or 30 days. Restore writes a unique replacement database and DPAPI key, reopens and verifies every record, and only then atomically changes the active-vault selector. The previous database, key, and selector rollback copy are retained; the app never automatically deletes the old vault.
+
 ## Publish
 
 The app project declares `win-x64` and `win-arm64`, `SelfContained=true`,
@@ -249,6 +261,7 @@ MSIX must be signed with a certificate whose private key is never committed.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security model](docs/SECURITY.md)
 - [Portable backup format](docs/BACKUP_FORMAT.md)
+- [Recovery A/B format and safety rules](docs/RECOVERY_FORMAT.md)
 - [Dependencies and licences](docs/DEPENDENCIES.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.md)
 - [Changelog](CHANGELOG.md)

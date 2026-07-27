@@ -23,6 +23,7 @@ and upstream maintenance again whenever a version changes.
 | Package | Version | Purpose / projects | Licence | Maintenance assessment | Selection rationale |
 | --- | ---: | --- | --- | --- | --- |
 | `CommunityToolkit.Mvvm` | `8.4.2` | Observable ViewModels and generated property notification in App/tests | MIT | Microsoft/community-maintained toolkit; pinned and widely used in Windows/.NET apps | Removes repetitive `INotifyPropertyChanged` code while keeping ViewModels framework-light and testable |
+| `Konscious.Security.Cryptography.Argon2` | `1.3.1` | Argon2id key derivation for verified Recovery-A/Recovery-B bundles in Infrastructure | MIT | Focused managed implementation; pinned, bounded parameters, and covered by authentication/tamper/rotation tests; monitor upstream and advisories | Supplies the memory-hard Argon2id construction without implementing a password KDF in application code |
 | `Microsoft.Extensions.DependencyInjection` | `10.0.10` | Constructor-injection composition root in App | MIT | Microsoft-maintained .NET 10 line | Small standard container; avoids a custom service locator or larger third-party container |
 | `Microsoft.Extensions.Logging` | `10.0.10` | Logging abstractions and source-generated structured events in App/Infrastructure/tests | MIT | Microsoft-maintained .NET 10 line | Standard abstractions with compile-time templates and controlled fields |
 | `Microsoft.Extensions.Logging.Debug` | `10.0.10` | Debugger-only provider in Debug builds | MIT | Microsoft-maintained .NET 10 line | No network sink, file sink, telemetry backend, or production provider is introduced |
@@ -99,7 +100,7 @@ An app-managed symmetric key creates a key-storage problem. Credential Locker do
 
 ### Portable KDF: Argon2id
 
-Argon2id is preferable for memory-hard password hashing but would add another third-party cryptographic implementation and deployment/maintenance surface. Version 1 uses platform PBKDF2-HMAC-SHA-512 with 600,000 iterations. This trade-off is documented; a future Argon2id format must receive a new KDF identifier/version.
+The original portable `.pab` format remains PBKDF2-HMAC-SHA-512 with 600,000 iterations for backward compatibility. Windows v2 Recovery-A/Recovery-B bundles use the separately versioned Argon2id format with 64 MiB memory, three iterations, and parallelism two. Bundle headers carry bounded KDF parameters and are authenticated as AES-GCM associated data.
 
 ### Portable authenticated encryption: AES-CBC plus HMAC
 

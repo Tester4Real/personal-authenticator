@@ -12,7 +12,7 @@ The solution uses constructor injection and one composition root in `PersonalAut
 | --- | --- |
 | `PersonalAuthenticator.App` | WinUI 3 views, dialogs, ViewModels, a shared UI timer, theming, notifications, accessibility bindings, window/session lifecycle handling, and dependency-injection registration |
 | `PersonalAuthenticator.Core` | Domain objects, vault state machine, strict provisioning parser, duplicate detection, sensitive-buffer ownership, clocks, and all boundary interfaces; no WinUI dependency |
-| `PersonalAuthenticator.Infrastructure` | Otp.NET adapter, DPAPI vault, atomic files, portable backup encryption, JSON serialization, local ZXing QR decoding, clipboard behavior, settings persistence, Windows user verification/session events, and structured logging |
+| `PersonalAuthenticator.Infrastructure` | Otp.NET adapter, encrypted SQLite v2 vault, DPAPI keys, atomic files, portable backup encryption, Argon2id/AES-GCM Recovery-A/B, local ZXing QR decoding, clipboard behavior, settings persistence, Windows user verification/session events, and structured logging |
 | `PersonalAuthenticator.Core.Tests` | Parser, sensitive-buffer, and vault-service tests |
 | `PersonalAuthenticator.Infrastructure.Tests` | RFC TOTP, DPAPI, portable-backup, logging-policy, and ViewModel tests |
 
@@ -102,6 +102,14 @@ The delayed clear uses an independent cancellation source, so cancellation of th
 Export receives explicit overwrite permission from its caller. It writes a ciphertext-only temporary file and uses atomic replacement without pre-deleting the selected destination.
 
 Restore applies one policy to the whole imported set: merge and skip matches, merge and replace matches, merge and keep matches as duplicates, or replace the current vault exactly while preserving intentional duplicates from the backup.
+
+### Verified v2 recovery
+
+`RecoveryBundleManager` alternates fixed A/B slot names. It writes the inactive slot through a same-directory temporary file with write-through semantics, completely decrypts and validates that temporary file, atomically activates it, and then decrypts and validates the activated file again before updating DPAPI-protected recovery health. Interruption at any checkpoint leaves the other verified slot untouched.
+
+The payload is bounded binary data rather than plaintext JSON. AES-256-GCM authenticates both the payload and the fixed header containing the format version, slot, bounded Argon2id parameters, salt, nonce, and ciphertext length. Production Argon2id settings are 64 MiB, three iterations, and parallelism two.
+
+Restore never writes into the active database or key. It creates unique replacement files, restores the bundle plus encrypted recovery-history entries, reopens the database, performs SQLite integrity and per-record authenticated-decryption checks, compares every recovered field, and only then atomically saves a pointer naming the new database and key. The old database and key remain unchanged and the pointer store retains its previous selector.
 
 ## Local vault lifecycle
 

@@ -41,6 +41,7 @@ endorsement of Personal Authenticator.
 | Microsoft.Extensions.Logging | `10.0.10` | [MIT](https://licenses.nuget.org/MIT); copyright Microsoft Corporation |
 | Microsoft.Extensions.Logging.Debug | `10.0.10` | [MIT](https://licenses.nuget.org/MIT); copyright Microsoft Corporation |
 | Microsoft.Win32.SystemEvents | `10.0.10` | [MIT](https://licenses.nuget.org/MIT); copyright Microsoft Corporation |
+| Konscious.Security.Cryptography.Argon2 | `1.3.1` | [MIT](https://licenses.nuget.org/MIT); copyright its contributors |
 | Otp.NET | `1.4.1` | [MIT](https://licenses.nuget.org/MIT); copyright 2017 Kyle Spearrin |
 | System.IO.FileSystem.AccessControl | `5.0.0` | [MIT](https://licenses.nuget.org/MIT); copyright Microsoft Corporation |
 | System.Security.Cryptography.ProtectedData | `10.0.10` | [MIT](https://licenses.nuget.org/MIT); copyright Microsoft Corporation |
