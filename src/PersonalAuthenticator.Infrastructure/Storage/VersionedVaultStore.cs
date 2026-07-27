@@ -4,14 +4,16 @@ using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
 using PersonalAuthenticator.Infrastructure.Otp;
 using PersonalAuthenticator.Infrastructure.Recovery;
+using PersonalAuthenticator.Infrastructure.Sync;
 
 namespace PersonalAuthenticator.Infrastructure.Storage;
 
-public sealed class VersionedVaultStore :
+public sealed partial class VersionedVaultStore :
     IVaultStore,
     IVaultMigrationCoordinator,
     IV2VaultFeatures,
     IRecoveryService,
+    ILocalFolderSyncService,
     IDisposable
 {
     private readonly string _baseDirectory;
@@ -21,6 +23,8 @@ public sealed class VersionedVaultStore :
     private readonly V1ToV2MigrationService _migrationService;
     private readonly RecoveryBundleManager _recoveryBundles;
     private readonly Action<RecoveryCheckpoint>? _recoveryCheckpoint;
+    private readonly LocalFolderSyncConfigStore _syncConfigStore;
+    private readonly LocalFolderSyncObjectStore _syncObjectStore;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
@@ -35,7 +39,8 @@ public sealed class VersionedVaultStore :
         ILogger<DpapiVaultStore> legacyLogger,
         string? baseDirectory,
         RecoveryBundleCodec? recoveryCodec,
-        Action<RecoveryCheckpoint>? recoveryCheckpoint)
+        Action<RecoveryCheckpoint>? recoveryCheckpoint,
+        Action<LocalSyncCheckpoint>? syncCheckpoint = null)
     {
         ArgumentNullException.ThrowIfNull(legacyLogger);
         _legacyLogger = legacyLogger;
@@ -53,6 +58,9 @@ public sealed class VersionedVaultStore :
             recoveryCodec,
             recoveryCheckpoint);
         _recoveryCheckpoint = recoveryCheckpoint;
+        _syncConfigStore = new LocalFolderSyncConfigStore(
+            Path.Combine(_baseDirectory, "local-folder-sync.dat"));
+        _syncObjectStore = new LocalFolderSyncObjectStore(syncCheckpoint);
     }
 
     public string VaultPath => _pointerStore.PointerPath;
