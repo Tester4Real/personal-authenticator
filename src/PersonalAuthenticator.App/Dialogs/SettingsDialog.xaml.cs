@@ -14,6 +14,7 @@ public sealed partial class SettingsDialog : ContentDialog
     private readonly IBackupService _backupService;
     private readonly IRecoveryService _recoveryService;
     private readonly ILocalFolderSyncService _syncService;
+    private readonly IGitHubSyncService _githubSyncService;
     private readonly nint _windowHandle;
 
     public SettingsDialog(
@@ -21,6 +22,7 @@ public sealed partial class SettingsDialog : ContentDialog
         IBackupService backupService,
         IRecoveryService recoveryService,
         ILocalFolderSyncService syncService,
+        IGitHubSyncService githubSyncService,
         nint windowHandle)
     {
         InitializeComponent();
@@ -28,10 +30,12 @@ public sealed partial class SettingsDialog : ContentDialog
         _backupService = backupService;
         _recoveryService = recoveryService;
         _syncService = syncService;
+        _githubSyncService = githubSyncService;
         _windowHandle = windowHandle;
         PopulateSettings(viewModel.Settings);
         PopulateMigrationState();
         _ = RefreshSyncStatusAsync();
+        _ = RefreshGitHubStatusAsync();
     }
 
     private async void Dialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
@@ -573,6 +577,194 @@ public sealed partial class SettingsDialog : ContentDialog
         }
     }
 
+    private async void ConfigureGitHubButton_Click(
+        object sender,
+        RoutedEventArgs args) =>
+        await ConfigureGitHubAsync(replaceRepository: false);
+
+    private async void ReplaceGitHubButton_Click(
+        object sender,
+        RoutedEventArgs args) =>
+        await ConfigureGitHubAsync(replaceRepository: true);
+
+    private async Task ConfigureGitHubAsync(bool replaceRepository)
+    {
+        string token = GitHubTokenBox.Password;
+        string syncPassword = GitHubSyncPasswordBox.Password;
+        var request = new GitHubConnectionRequest(
+            GitHubOwnerBox.Text.Trim(),
+            GitHubRepositoryBox.Text.Trim(),
+            GitHubBranchBox.Text.Trim(),
+            GitHubPathBox.Text.Trim(),
+            GitHubBackgroundToggle.IsOn);
+        try
+        {
+            if (replaceRepository)
+            {
+                await _githubSyncService.ReplaceGitHubRepositoryAsync(
+                    request,
+                    token.AsMemory(),
+                    syncPassword.AsMemory(),
+                    CancellationToken.None);
+                ShowBackupStatus(
+                    "The replacement repository was uploaded, downloaded with a fresh client, verified, and activated. The previous configuration remains disabled.",
+                    isError: false);
+            }
+            else
+            {
+                await _githubSyncService.ConfigureGitHubAsync(
+                    request,
+                    token.AsMemory(),
+                    syncPassword.AsMemory(),
+                    CancellationToken.None);
+                ShowBackupStatus(
+                    "GitHub sync is connected to the verified private repository.",
+                    isError: false);
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The GitHub connection could not be configured.",
+                isError: true);
+        }
+        finally
+        {
+            ClearGitHubSecrets();
+            await RefreshGitHubStatusAsync();
+        }
+    }
+
+    private async void TestGitHubButton_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            await _githubSyncService.TestGitHubConnectionAsync(
+                CancellationToken.None);
+            ShowBackupStatus(
+                "GitHub authentication, privacy, repository identity, permissions, vault, and protocol checks passed.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The GitHub connection test failed.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshGitHubStatusAsync();
+        }
+    }
+
+    private async void SyncGitHubButton_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            await _githubSyncService.SyncGitHubNowAsync(CancellationToken.None);
+            await _viewModel.ReloadVaultAsync(CancellationToken.None);
+            ShowBackupStatus("GitHub synchronisation completed.", isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "GitHub synchronisation failed. Local changes remain queued.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshGitHubStatusAsync();
+        }
+    }
+
+    private async void RepairGitHubButton_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            await _githubSyncService.RepairGitHubRemoteAsync(
+                CancellationToken.None);
+            ShowBackupStatus(
+                "Remote Repair completed without deleting unknown remote files.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "Remote Repair could not complete safely.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshGitHubStatusAsync();
+        }
+    }
+
+    private async void ForgetGitHubButton_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            await _githubSyncService.DisableAndForgetGitHubAsync(
+                CancellationToken.None);
+            ShowBackupStatus(
+                "GitHub sync and the stored DPAPI credential were removed. The repository was not deleted.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "GitHub credentials could not be removed.",
+                isError: true);
+        }
+        finally
+        {
+            ClearGitHubSecrets();
+            await RefreshGitHubStatusAsync();
+        }
+    }
+
+    private async Task RefreshGitHubStatusAsync()
+    {
+        try
+        {
+            GitHubSyncStatus status = await _githubSyncService.GetGitHubStatusAsync(
+                CancellationToken.None);
+            GitHubBackgroundToggle.IsOn = status.IsBackgroundSyncEnabled;
+            GitHubStatusText.Text = !status.IsConfigured
+                ? "GitHub sync is not configured."
+                : $"{status.Repository} · repository ID {status.RepositoryId} · " +
+                  $"{status.PendingOperationCount} pending · {status.RemoteHealth} · " +
+                  $"last success: {(status.LastSuccessfulSyncAtUtc.HasValue ? status.LastSuccessfulSyncAtUtc.Value.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "never")}" +
+                  (string.IsNullOrWhiteSpace(status.AuthenticationStatus)
+                      ? string.Empty
+                      : $" · {status.AuthenticationStatus}") +
+                  (string.IsNullOrWhiteSpace(status.LastError)
+                      ? string.Empty
+                      : $" · {status.LastError}");
+        }
+        catch (Exception exception)
+        {
+            GitHubStatusText.Text = exception is SafeApplicationException
+                ? exception.Message
+                : "GitHub sync status could not be read.";
+        }
+    }
+
+    private void ClearGitHubSecrets()
+    {
+        GitHubTokenBox.Password = string.Empty;
+        GitHubSyncPasswordBox.Password = string.Empty;
+    }
+
     private void ClearRecoveryPasswords()
     {
         RecoveryPasswordBox.Password = string.Empty;
@@ -584,6 +776,7 @@ public sealed partial class SettingsDialog : ContentDialog
         ClearPasswords();
         ClearRecoveryPasswords();
         SyncPasswordBox.Password = string.Empty;
+        ClearGitHubSecrets();
     }
 
     private void ClearPasswords()

@@ -66,6 +66,8 @@ public partial class App : Application
             provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<ILocalFolderSyncService>(
             provider => provider.GetRequiredService<VersionedVaultStore>());
+        services.AddSingleton<IGitHubSyncService>(
+            provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IVaultService, VaultService>();
         services.AddSingleton<IBackupService, PasswordBackupService>();
         services.AddSingleton<IQrCodeDecoder, LocalQrCodeDecoder>();

@@ -209,6 +209,58 @@
         </ScrollViewer>
       </TabViewItem>
 
+      <TabViewItem Header="GitHub sync" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="12">
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="GitHub sync is optional. Use a private repository and a fine-grained token limited to that repository with Contents read/write access. Never paste the token into source code or support messages."
+                Severity="Informational" />
+            <TextBox x:Name="GitHubOwnerBox" Header="Repository owner" />
+            <TextBox x:Name="GitHubRepositoryBox" Header="Private repository name" />
+            <TextBox
+                x:Name="GitHubBranchBox"
+                Header="Dedicated sync branch"
+                Text="personal-authenticator-sync" />
+            <TextBox
+                x:Name="GitHubPathBox"
+                Header="Dedicated repository path"
+                Text=".personal-authenticator" />
+            <PasswordBox
+                x:Name="GitHubTokenBox"
+                Header="Fine-grained repository token"
+                PasswordChar="●" />
+            <PasswordBox
+                x:Name="GitHubSyncPasswordBox"
+                Header="Sync encryption password (12+ characters)"
+                PasswordChar="●" />
+            <ToggleSwitch
+                x:Name="GitHubBackgroundToggle"
+                Header="Background sync every 15 minutes" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Click="ConfigureGitHubButton_Click" Content="Connect or replace token" />
+              <Button Click="TestGitHubButton_Click" Content="Test connection" />
+              <Button Click="SyncGitHubButton_Click" Content="Sync now" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Click="ReplaceGitHubButton_Click" Content="Replace repository…" />
+              <Button Click="RepairGitHubButton_Click" Content="Remote repair" />
+              <Button Click="ForgetGitHubButton_Click" Content="Disable and forget credentials" />
+            </StackPanel>
+            <TextBlock
+                x:Name="GitHubStatusText"
+                Text="GitHub sync status has not been checked."
+                TextWrapping="Wrap" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="A GitHub failure never deletes local accounts. Repository replacement retains the old configuration as a disabled fallback and never deletes the old repository."
+                Severity="Warning" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
       <TabViewItem Header="About" IsClosable="False">
         <ScrollViewer Padding="8,16,8,8">
           <StackPanel Spacing="10">

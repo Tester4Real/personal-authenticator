@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly IBackupService _backupService;
     private readonly IRecoveryService _recoveryService;
     private readonly ILocalFolderSyncService _syncService;
+    private readonly IGitHubSyncService _githubSyncService;
     private readonly DispatcherQueueTimer _timer;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly nint _windowHandle;
@@ -48,7 +49,8 @@ public sealed partial class MainWindow : Window, IDisposable
         IAutomaticLockMonitor lockMonitor,
         IBackupService backupService,
         IRecoveryService recoveryService,
-        ILocalFolderSyncService syncService)
+        ILocalFolderSyncService syncService,
+        IGitHubSyncService githubSyncService)
     {
         try
         {
@@ -67,6 +69,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _backupService = backupService;
         _recoveryService = recoveryService;
         _syncService = syncService;
+        _githubSyncService = githubSyncService;
         Root.DataContext = ViewModel;
         Root.AddHandler(
             UIElement.KeyDownEvent,
@@ -917,6 +920,7 @@ public sealed partial class MainWindow : Window, IDisposable
             _backupService,
             _recoveryService,
             _syncService,
+            _githubSyncService,
             _windowHandle)
         {
             XamlRoot = Root.XamlRoot,
