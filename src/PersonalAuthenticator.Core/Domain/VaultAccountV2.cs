@@ -10,7 +10,8 @@ public sealed class VaultAccountV2
         bool favourite = false,
         int sortOrder = 0,
         DateTimeOffset? createdAtUtc = null,
-        DateTimeOffset? updatedAtUtc = null)
+        DateTimeOffset? updatedAtUtc = null,
+        DateTimeOffset? archivedAtUtc = null)
     {
         ValidateDisplayValue(issuer, nameof(issuer));
         ValidateDisplayValue(accountName, nameof(accountName));
@@ -39,6 +40,14 @@ public sealed class VaultAccountV2
                 nameof(updatedAtUtc));
         }
 
+        DateTimeOffset? archived = archivedAtUtc?.ToUniversalTime();
+        if (archived < created)
+        {
+            throw new ArgumentException(
+                "The archive time cannot precede the account creation time.",
+                nameof(archivedAtUtc));
+        }
+
         Id = id;
         Issuer = issuer.Trim();
         AccountName = accountName.Trim();
@@ -47,6 +56,7 @@ public sealed class VaultAccountV2
         SortOrder = sortOrder;
         CreatedAtUtc = created;
         UpdatedAtUtc = updated;
+        ArchivedAtUtc = archived;
     }
 
     public Guid Id { get; }
@@ -64,6 +74,8 @@ public sealed class VaultAccountV2
     public DateTimeOffset CreatedAtUtc { get; }
 
     public DateTimeOffset UpdatedAtUtc { get; }
+
+    public DateTimeOffset? ArchivedAtUtc { get; }
 
     private static void ValidateDisplayValue(string value, string parameterName)
     {

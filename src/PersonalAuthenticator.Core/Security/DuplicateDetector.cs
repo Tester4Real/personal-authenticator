@@ -10,35 +10,46 @@ public sealed class DuplicateDetector : IDisposable
     private readonly byte[] _sessionKey = RandomNumberGenerator.GetBytes(32);
 
     public bool AreLikelyDuplicates(TotpAccount left, TotpAccount right)
+        => Classify(left, right) == DuplicateMatchKind.Exact;
+
+    public DuplicateMatchKind? Classify(TotpAccount left, TotpAccount right)
     {
         Span<byte> leftFingerprint = stackalloc byte[32];
         Span<byte> rightFingerprint = stackalloc byte[32];
-        ComputeFingerprint(left, leftFingerprint);
-        ComputeFingerprint(right, rightFingerprint);
-        bool result = CryptographicOperations.FixedTimeEquals(leftFingerprint, rightFingerprint);
+        ComputeIdentityFingerprint(left, leftFingerprint);
+        ComputeIdentityFingerprint(right, rightFingerprint);
+        bool sameIdentity = CryptographicOperations.FixedTimeEquals(
+            leftFingerprint,
+            rightFingerprint);
         CryptographicOperations.ZeroMemory(leftFingerprint);
         CryptographicOperations.ZeroMemory(rightFingerprint);
-        return result;
+        if (!sameIdentity)
+        {
+            return null;
+        }
+
+        bool sameSecret =
+            left.Algorithm == right.Algorithm &&
+            left.Digits == right.Digits &&
+            left.Period == right.Period &&
+            CryptographicOperations.FixedTimeEquals(left.Secret, right.Secret);
+        return sameSecret
+            ? DuplicateMatchKind.Exact
+            : DuplicateMatchKind.SameAccountDifferentSecret;
     }
 
     public void Dispose() => CryptographicOperations.ZeroMemory(_sessionKey);
 
-    private void ComputeFingerprint(TotpAccount account, Span<byte> destination)
+    private void ComputeIdentityFingerprint(TotpAccount account, Span<byte> destination)
     {
         using IncrementalHash hmac = IncrementalHash.CreateHMAC(HashAlgorithmName.SHA256, _sessionKey);
         byte[] issuer = Encoding.UTF8.GetBytes(account.Issuer.Normalize(NormalizationForm.FormKC).ToUpperInvariant());
         byte[] accountName = Encoding.UTF8.GetBytes(account.AccountName.Normalize(NormalizationForm.FormKC).ToUpperInvariant());
         Span<byte> lengthPrefix = stackalloc byte[4];
-        Span<byte> parameters = stackalloc byte[12];
-        BinaryPrimitives.WriteInt32LittleEndian(parameters, (int)account.Algorithm);
-        BinaryPrimitives.WriteInt32LittleEndian(parameters[4..], account.Digits);
-        BinaryPrimitives.WriteInt32LittleEndian(parameters[8..], account.Period);
         try
         {
             AppendLengthPrefixed(hmac, issuer, lengthPrefix);
             AppendLengthPrefixed(hmac, accountName, lengthPrefix);
-            hmac.AppendData(parameters);
-            hmac.AppendData(account.Secret);
             if (!hmac.TryGetHashAndReset(destination, out int bytesWritten) ||
                 bytesWritten != destination.Length)
             {
@@ -50,7 +61,6 @@ public sealed class DuplicateDetector : IDisposable
             CryptographicOperations.ZeroMemory(issuer);
             CryptographicOperations.ZeroMemory(accountName);
             CryptographicOperations.ZeroMemory(lengthPrefix);
-            CryptographicOperations.ZeroMemory(parameters);
         }
     }
 

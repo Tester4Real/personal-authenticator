@@ -71,6 +71,7 @@ internal sealed class V1ToV2MigrationService
             string keyPath = Path.Combine(_baseDirectory, "vault-v2.key");
 
             var migratedAccounts = new List<VaultAccountV2>(sourceAccounts.Count);
+            var migrationHistory = new List<AccountHistoryEntryV2>(sourceAccounts.Count);
             foreach (TotpAccount source in sourceAccounts)
             {
                 Guid versionId = Guid.NewGuid();
@@ -96,12 +97,20 @@ internal sealed class V1ToV2MigrationService
                         ProvisioningUriOrigin.CanonicalGenerated,
                         SecretVersionState.Active,
                         source.CreatedAtUtc));
+                migrationHistory.Add(
+                    new AccountHistoryEntryV2(
+                        Guid.NewGuid(),
+                        source.Id,
+                        AccountHistoryAction.Migrated,
+                        DateTimeOffset.UtcNow,
+                        versionId));
             }
 
             var stagingStore = new V2SqliteVaultStore(stagingPath, keyPath);
             await stagingStore.SaveAsync(
                 migratedAccounts,
                 migratedVersions,
+                migrationHistory,
                 cancellationToken);
             await VerifyV2Async(stagingStore, sourceAccounts, cancellationToken);
 

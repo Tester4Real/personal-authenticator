@@ -2,10 +2,15 @@ using Microsoft.Extensions.Logging;
 using PersonalAuthenticator.Core.Abstractions;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
+using PersonalAuthenticator.Infrastructure.Otp;
 
 namespace PersonalAuthenticator.Infrastructure.Storage;
 
-public sealed class VersionedVaultStore : IVaultStore, IVaultMigrationCoordinator, IDisposable
+public sealed class VersionedVaultStore :
+    IVaultStore,
+    IVaultMigrationCoordinator,
+    IV2VaultFeatures,
+    IDisposable
 {
     private readonly string _baseDirectory;
     private readonly ILogger<DpapiVaultStore> _legacyLogger;
@@ -278,6 +283,417 @@ public sealed class VersionedVaultStore : IVaultStore, IVaultMigrationCoordinato
         }
     }
 
+    public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return _pointerStore.Exists &&
+                (await _pointerStore.LoadAsync(cancellationToken)).Mode ==
+                ActiveVaultMode.LocalV2;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task AddSecretCandidateAsync(
+        Guid accountId,
+        TotpAccount candidate,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            VaultAccountV2 account = FindV2Account(snapshot, accountId);
+            EnsureNotArchived(account);
+            if (snapshot.SecretVersions.Any(
+                    version =>
+                        version.AccountId == accountId &&
+                        HasSameSecret(version, candidate)))
+            {
+                throw new SafeApplicationException(
+                    "VaultV2.DuplicateSecretVersion",
+                    "This secret version already exists for the account.");
+            }
+
+            using var canonicalCandidate = new TotpAccount(
+                account.Id,
+                account.Issuer,
+                account.AccountName,
+                candidate.Secret,
+                candidate.Algorithm,
+                candidate.Digits,
+                candidate.Period);
+            var candidateVersion = new SecretVersionV2(
+                Guid.NewGuid(),
+                accountId,
+                candidate.Secret,
+                candidate.Algorithm,
+                candidate.Digits,
+                candidate.Period,
+                CanonicalProvisioningUri.Create(canonicalCandidate),
+                ProvisioningUriOrigin.CanonicalGenerated,
+                SecretVersionState.Candidate,
+                DateTimeOffset.UtcNow);
+            try
+            {
+                var versions = snapshot.SecretVersions
+                    .Append(candidateVersion)
+                    .ToList();
+                var history = snapshot.HistoryEntries
+                    .Append(
+                        NewHistory(
+                            accountId,
+                            AccountHistoryAction.SecretCandidateAdded,
+                            candidateVersion.Id))
+                    .ToList();
+                await store.SaveAsync(
+                    snapshot.Accounts,
+                    versions,
+                    history,
+                    cancellationToken);
+            }
+            finally
+            {
+                candidateVersion.Dispose();
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task AddDuplicateAccountAsync(
+        Guid relatedAccountId,
+        TotpAccount account,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        await _gate.WaitAsync(cancellationToken);
+        SecretVersionV2? newVersion = null;
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            VaultAccountV2 related = FindV2Account(snapshot, relatedAccountId);
+            EnsureNotArchived(related);
+            if (snapshot.Accounts.Any(existing => existing.Id == account.Id))
+            {
+                throw new SafeApplicationException(
+                    "VaultV2.DuplicateIdentifier",
+                    "The new account identifier already exists.");
+            }
+
+            Guid versionId = Guid.NewGuid();
+            int sortOrder = snapshot.Accounts
+                .Where(existing => existing.ArchivedAtUtc is null)
+                .Select(existing => existing.SortOrder)
+                .DefaultIfEmpty(-1)
+                .Max() + 1;
+            var newAccount = new VaultAccountV2(
+                account.Id,
+                account.Issuer,
+                account.AccountName,
+                versionId,
+                account.Favourite,
+                sortOrder,
+                account.CreatedAtUtc,
+                account.UpdatedAtUtc);
+            newVersion = new SecretVersionV2(
+                versionId,
+                account.Id,
+                account.Secret,
+                account.Algorithm,
+                account.Digits,
+                account.Period,
+                CanonicalProvisioningUri.Create(account),
+                ProvisioningUriOrigin.CanonicalGenerated,
+                SecretVersionState.Active,
+                account.UpdatedAtUtc);
+            var accounts = snapshot.Accounts.Append(newAccount).ToList();
+            var versions = snapshot.SecretVersions.Append(newVersion).ToList();
+            var history = snapshot.HistoryEntries
+                .Append(
+                    NewHistory(
+                        account.Id,
+                        AccountHistoryAction.DuplicateAddedSeparately,
+                        versionId,
+                        relatedAccountId: relatedAccountId))
+                .Append(
+                    NewHistory(
+                        relatedAccountId,
+                        AccountHistoryAction.DuplicateAddedSeparately,
+                        relatedAccountId: account.Id))
+                .ToList();
+            await store.SaveAsync(accounts, versions, history, cancellationToken);
+        }
+        finally
+        {
+            newVersion?.Dispose();
+            _gate.Release();
+        }
+    }
+
+    public async Task ActivateSecretCandidateAsync(
+        Guid accountId,
+        Guid secretVersionId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        var ownedVersions = new List<SecretVersionV2>();
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            VaultAccountV2 account = FindV2Account(snapshot, accountId);
+            EnsureNotArchived(account);
+            SecretVersionV2 candidate = snapshot.SecretVersions.FirstOrDefault(
+                version =>
+                    version.Id == secretVersionId &&
+                    version.AccountId == accountId) ??
+                throw new SafeApplicationException(
+                    "VaultV2.SecretVersionNotFound",
+                    "The selected secret version no longer exists.");
+            if (candidate.State != SecretVersionState.Candidate)
+            {
+                throw new SafeApplicationException(
+                    "VaultV2.NotCandidate",
+                    "Only a candidate secret can be activated.");
+            }
+
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            var versions = new List<SecretVersionV2>(snapshot.SecretVersions.Count);
+            foreach (SecretVersionV2 version in snapshot.SecretVersions)
+            {
+                if (version.AccountId != accountId)
+                {
+                    versions.Add(version);
+                    continue;
+                }
+
+                if (version.Id == candidate.Id)
+                {
+                    SecretVersionV2 activated = CloneVersion(
+                        version,
+                        SecretVersionState.Active,
+                        retiredAtUtc: null);
+                    ownedVersions.Add(activated);
+                    versions.Add(activated);
+                    continue;
+                }
+                else if (version.State == SecretVersionState.Active)
+                {
+                    SecretVersionV2 retired = CloneVersion(
+                        version,
+                        SecretVersionState.Retired,
+                        now);
+                    ownedVersions.Add(retired);
+                    versions.Add(retired);
+                }
+                else
+                {
+                    versions.Add(version);
+                }
+            }
+
+            List<VaultAccountV2> accounts = snapshot.Accounts
+                .Select(
+                    item => item.Id == accountId
+                        ? CloneAccount(
+                            item,
+                            activeSecretVersionId: candidate.Id,
+                            updatedAtUtc: now,
+                            archivedAtUtc: null)
+                        : item)
+                .ToList();
+            var history = snapshot.HistoryEntries
+                .Append(
+                    NewHistory(
+                        accountId,
+                        AccountHistoryAction.SecretActivated,
+                        candidate.Id,
+                        account.ActiveSecretVersionId))
+                .ToList();
+            await store.SaveAsync(accounts, versions, history, cancellationToken);
+        }
+        finally
+        {
+            foreach (SecretVersionV2 version in ownedVersions)
+            {
+                version.Dispose();
+            }
+
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<SecretVersionSummary>> GetSecretVersionsAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            _ = FindV2Account(snapshot, accountId);
+            return snapshot.SecretVersions
+                .Where(version => version.AccountId == accountId)
+                .OrderBy(version => version.State)
+                .ThenByDescending(version => version.CreatedAtUtc)
+                .Select(
+                    version => new SecretVersionSummary(
+                        version.Id,
+                        version.State,
+                        version.Algorithm,
+                        version.Digits,
+                        version.Period,
+                        version.CreatedAtUtc,
+                        version.RetiredAtUtc))
+                .ToList();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<ArchivedAccountSummary>> GetArchivedAccountsAsync(
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            return snapshot.Accounts
+                .Where(account => account.ArchivedAtUtc is not null)
+                .OrderByDescending(account => account.ArchivedAtUtc)
+                .Select(
+                    account => new ArchivedAccountSummary(
+                        account.Id,
+                        account.Issuer,
+                        account.AccountName,
+                        account.ArchivedAtUtc!.Value))
+                .ToList();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task RestoreArchivedAccountAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            VaultAccountV2 archived = FindV2Account(snapshot, accountId);
+            if (archived.ArchivedAtUtc is null)
+            {
+                return;
+            }
+
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            List<VaultAccountV2> accounts = snapshot.Accounts
+                .Select(
+                    account => account.Id == accountId
+                        ? CloneAccount(
+                            account,
+                            account.ActiveSecretVersionId,
+                            now,
+                            archivedAtUtc: null)
+                        : account)
+                .ToList();
+            var history = snapshot.HistoryEntries
+                .Append(
+                    NewHistory(
+                        accountId,
+                        AccountHistoryAction.Restored,
+                        archived.ActiveSecretVersionId))
+                .ToList();
+            await store.SaveAsync(
+                accounts,
+                snapshot.SecretVersions,
+                history,
+                cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<AccountHistoryEntryV2>> GetAccountHistoryAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            _ = FindV2Account(snapshot, accountId);
+            return snapshot.HistoryEntries
+                .Where(entry => entry.AccountId == accountId)
+                .OrderByDescending(entry => entry.OccurredAtUtc)
+                .ToList();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<SensitiveSetupInfo> GetActiveSetupInfoAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            VaultAccountV2 account = FindV2Account(snapshot, accountId);
+            EnsureNotArchived(account);
+            SecretVersionV2 active = snapshot.SecretVersions.First(
+                version => version.Id == account.ActiveSecretVersionId);
+            string provisioningUri = active.ProvisioningUri;
+            if (active.ProvisioningUriOrigin == ProvisioningUriOrigin.CanonicalGenerated)
+            {
+                using var canonicalAccount = new TotpAccount(
+                    account.Id,
+                    account.Issuer,
+                    account.AccountName,
+                    active.Secret,
+                    active.Algorithm,
+                    active.Digits,
+                    active.Period);
+                provisioningUri = CanonicalProvisioningUri.Create(canonicalAccount);
+            }
+
+            return new SensitiveSetupInfo(
+                account.Id,
+                account.Issuer,
+                account.AccountName,
+                provisioningUri);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -355,6 +771,101 @@ public sealed class VersionedVaultStore : IVaultStore, IVaultMigrationCoordinato
         return combined;
     }
 
+    private async Task<V2SqliteVaultStore> GetActiveV2StoreAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!_pointerStore.Exists)
+        {
+            throw V2Required();
+        }
+
+        ActiveVaultPointer pointer = await _pointerStore.LoadAsync(cancellationToken);
+        if (pointer.Mode != ActiveVaultMode.LocalV2)
+        {
+            throw V2Required();
+        }
+
+        return new V2SqliteVaultStore(
+            ResolveSelectedPath(pointer.StoreFileName),
+            Path.Combine(_baseDirectory, "vault-v2.key"));
+    }
+
+    private static VaultAccountV2 FindV2Account(
+        V2VaultSnapshot snapshot,
+        Guid accountId) =>
+        snapshot.Accounts.FirstOrDefault(account => account.Id == accountId) ??
+        throw new SafeApplicationException(
+            "VaultV2.AccountNotFound",
+            "The selected account no longer exists.");
+
+    private static void EnsureNotArchived(VaultAccountV2 account)
+    {
+        if (account.ArchivedAtUtc is not null)
+        {
+            throw new SafeApplicationException(
+                "VaultV2.AccountArchived",
+                "Restore the archived account before changing its secret.");
+        }
+    }
+
+    private static bool HasSameSecret(
+        SecretVersionV2 version,
+        TotpAccount account) =>
+        version.Algorithm == account.Algorithm &&
+        version.Digits == account.Digits &&
+        version.Period == account.Period &&
+        System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            version.Secret,
+            account.Secret);
+
+    private static SecretVersionV2 CloneVersion(
+        SecretVersionV2 version,
+        SecretVersionState state,
+        DateTimeOffset? retiredAtUtc) =>
+        new(
+            version.Id,
+            version.AccountId,
+            version.Secret,
+            version.Algorithm,
+            version.Digits,
+            version.Period,
+            version.ProvisioningUri,
+            version.ProvisioningUriOrigin,
+            state,
+            version.CreatedAtUtc,
+            retiredAtUtc);
+
+    private static VaultAccountV2 CloneAccount(
+        VaultAccountV2 account,
+        Guid activeSecretVersionId,
+        DateTimeOffset updatedAtUtc,
+        DateTimeOffset? archivedAtUtc) =>
+        new(
+            account.Id,
+            account.Issuer,
+            account.AccountName,
+            activeSecretVersionId,
+            account.Favourite,
+            account.SortOrder,
+            account.CreatedAtUtc,
+            updatedAtUtc,
+            archivedAtUtc);
+
+    private static AccountHistoryEntryV2 NewHistory(
+        Guid accountId,
+        AccountHistoryAction action,
+        Guid? secretVersionId = null,
+        Guid? previousSecretVersionId = null,
+        Guid? relatedAccountId = null) =>
+        new(
+            Guid.NewGuid(),
+            accountId,
+            action,
+            DateTimeOffset.UtcNow,
+            secretVersionId,
+            previousSecretVersionId,
+            relatedAccountId);
+
     private static void DisposeAccounts(IEnumerable<TotpAccount> accounts)
     {
         foreach (TotpAccount account in accounts)
@@ -367,4 +878,9 @@ public sealed class VersionedVaultStore : IVaultStore, IVaultMigrationCoordinato
         new(
             "VaultMigration.ChoiceRequired",
             "Choose whether to upgrade the legacy vault or continue using v1 before unlocking.");
+
+    private static SafeApplicationException V2Required() =>
+        new(
+            "VaultV2.Required",
+            "Upgrade the local vault to v2 before using this feature.");
 }

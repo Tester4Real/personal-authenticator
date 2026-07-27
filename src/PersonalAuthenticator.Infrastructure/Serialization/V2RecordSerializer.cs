@@ -108,6 +108,49 @@ internal static class V2RecordSerializer
         }
     }
 
+    public static byte[] SerializeHistoryEntry(AccountHistoryEntryV2 entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return JsonSerializer.SerializeToUtf8Bytes(
+            HistoryRecordDto.FromDomain(entry),
+            Options);
+    }
+
+    public static AccountHistoryEntryV2 DeserializeHistoryEntry(
+        ReadOnlySpan<byte> payload,
+        Guid expectedHistoryId,
+        Guid expectedAccountId)
+    {
+        HistoryRecordDto? dto;
+        try
+        {
+            dto = JsonSerializer.Deserialize<HistoryRecordDto>(payload, Options);
+        }
+        catch (JsonException exception)
+        {
+            throw InvalidRecord("The encrypted v2 account-history record is corrupt.", exception);
+        }
+
+        if (dto is null ||
+            dto.SchemaVersion != 1 ||
+            dto.Id != expectedHistoryId ||
+            dto.AccountId != expectedAccountId)
+        {
+            throw InvalidRecord("The encrypted v2 account-history record is invalid.");
+        }
+
+        try
+        {
+            return dto.ToDomain();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+                InvalidOperationException)
+        {
+            throw InvalidRecord("The encrypted v2 account-history record is invalid.", exception);
+        }
+    }
+
     private static SafeApplicationException InvalidRecord(
         string message,
         Exception? innerException = null) =>
@@ -135,6 +178,8 @@ internal static class V2RecordSerializer
 
         public DateTimeOffset UpdatedAtUtc { get; set; }
 
+        public DateTimeOffset? ArchivedAtUtc { get; set; }
+
         public static AccountRecordDto FromDomain(VaultAccountV2 account) =>
             new()
             {
@@ -147,6 +192,7 @@ internal static class V2RecordSerializer
                 SortOrder = account.SortOrder,
                 CreatedAtUtc = account.CreatedAtUtc,
                 UpdatedAtUtc = account.UpdatedAtUtc,
+                ArchivedAtUtc = account.ArchivedAtUtc,
             };
 
         public VaultAccountV2 ToDomain() =>
@@ -158,7 +204,8 @@ internal static class V2RecordSerializer
                 Favourite,
                 SortOrder,
                 CreatedAtUtc,
-                UpdatedAtUtc);
+                UpdatedAtUtc,
+                ArchivedAtUtc);
     }
 
     private sealed class SecretVersionRecordDto
@@ -228,5 +275,51 @@ internal static class V2RecordSerializer
             CryptographicOperations.ZeroMemory(SecretBytes);
             SecretBytes = null;
         }
+    }
+
+    private sealed class HistoryRecordDto
+    {
+        public int SchemaVersion { get; set; }
+
+        public Guid Id { get; set; }
+
+        public Guid AccountId { get; set; }
+
+        public AccountHistoryAction Action { get; set; }
+
+        public DateTimeOffset OccurredAtUtc { get; set; }
+
+        public Guid? SecretVersionId { get; set; }
+
+        public Guid? PreviousSecretVersionId { get; set; }
+
+        public Guid? RelatedAccountId { get; set; }
+
+        public Guid? ActorDeviceId { get; set; }
+
+        public static HistoryRecordDto FromDomain(AccountHistoryEntryV2 entry) =>
+            new()
+            {
+                SchemaVersion = 1,
+                Id = entry.Id,
+                AccountId = entry.AccountId,
+                Action = entry.Action,
+                OccurredAtUtc = entry.OccurredAtUtc,
+                SecretVersionId = entry.SecretVersionId,
+                PreviousSecretVersionId = entry.PreviousSecretVersionId,
+                RelatedAccountId = entry.RelatedAccountId,
+                ActorDeviceId = entry.ActorDeviceId,
+            };
+
+        public AccountHistoryEntryV2 ToDomain() =>
+            new(
+                Id,
+                AccountId,
+                Action,
+                OccurredAtUtc,
+                SecretVersionId,
+                PreviousSecretVersionId,
+                RelatedAccountId,
+                ActorDeviceId);
     }
 }

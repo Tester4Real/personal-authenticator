@@ -119,6 +119,37 @@ public sealed class VaultService : IVaultService
         }
     }
 
+    public async Task ReloadAsync(CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken);
+        IReadOnlyList<TotpAccount>? loaded = null;
+        try
+        {
+            EnsureState(VaultState.Unlocked);
+            loaded = await _store.LoadAsync(cancellationToken);
+            ClearAccounts();
+            _accounts.AddRange(loaded.OrderBy(account => account.SortOrder));
+            loaded = null;
+            AccountsChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch
+        {
+            if (loaded is not null)
+            {
+                DisposeAccounts(loaded);
+            }
+
+            SetState(VaultState.Faulted);
+            AccountsChanged?.Invoke(this, EventArgs.Empty);
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public Task AddAsync(TotpAccount account, CancellationToken cancellationToken) =>
         AddAsync(account, DuplicateResolution.Cancel, cancellationToken);
 
@@ -128,6 +159,23 @@ public sealed class VaultService : IVaultService
         ThrowIfDisposed();
         EnsureState(VaultState.Unlocked);
         return _accounts.FirstOrDefault(existing => _duplicateDetector.AreLikelyDuplicates(existing, account))?.Id;
+    }
+
+    public DuplicateAccountMatch? FindDuplicate(TotpAccount account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        ThrowIfDisposed();
+        EnsureState(VaultState.Unlocked);
+        foreach (TotpAccount existing in _accounts)
+        {
+            DuplicateMatchKind? kind = _duplicateDetector.Classify(existing, account);
+            if (kind is not null)
+            {
+                return new DuplicateAccountMatch(existing.Id, kind.Value);
+            }
+        }
+
+        return null;
     }
 
     public async Task AddAsync(

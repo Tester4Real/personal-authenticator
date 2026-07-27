@@ -140,6 +140,95 @@ public sealed class V2SqliteVaultStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_SchemaOneDatabase_UpgradesHistorySchemaTransactionally()
+    {
+        string databasePath = Path.Combine(_directory, "vault-v2.db");
+        using var keyProvider = new FixedRootKeyProvider();
+        var store = new V2SqliteVaultStore(databasePath, keyProvider);
+        (VaultAccountV2 account, SecretVersionV2 version) = CreateActiveAccount();
+        using (version)
+        {
+            await store.SaveAsync(
+                [account],
+                [version],
+                TestContext.Current.CancellationToken);
+        }
+
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Pooling = false,
+        }.ToString();
+        await using (var connection = new SqliteConnection(connectionString))
+        {
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                "DROP TABLE account_history_records; PRAGMA user_version = 1;";
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        using V2VaultSnapshot snapshot = await store.LoadAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Single(snapshot.Accounts);
+        Assert.Empty(snapshot.HistoryEntries);
+
+        await using var verificationConnection = new SqliteConnection(connectionString);
+        await verificationConnection.OpenAsync(TestContext.Current.CancellationToken);
+        await using SqliteCommand versionCommand = verificationConnection.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version;";
+        Assert.Equal(
+            2L,
+            (long)(await versionCommand.ExecuteScalarAsync(
+                TestContext.Current.CancellationToken))!);
+        await using SqliteCommand tableCommand = verificationConnection.CreateCommand();
+        tableCommand.CommandText =
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'account_history_records';";
+        Assert.Equal(
+            1L,
+            (long)(await tableCommand.ExecuteScalarAsync(
+                TestContext.Current.CancellationToken))!);
+    }
+
+    [Fact]
+    public async Task SaveAndLoad_HistoryRecords_AreEncryptedAndRoundTrip()
+    {
+        string databasePath = Path.Combine(_directory, "vault-v2.db");
+        using var keyProvider = new FixedRootKeyProvider();
+        var store = new V2SqliteVaultStore(databasePath, keyProvider);
+        (VaultAccountV2 account, SecretVersionV2 version) = CreateActiveAccount();
+        var occurredAt = new DateTimeOffset(2099, 12, 31, 23, 59, 59, TimeSpan.Zero);
+        var history = new AccountHistoryEntryV2(
+            Guid.NewGuid(),
+            account.Id,
+            AccountHistoryAction.SecretActivated,
+            occurredAt,
+            version.Id);
+        using (version)
+        {
+            await store.SaveAsync(
+                [account],
+                [version],
+                [history],
+                TestContext.Current.CancellationToken);
+        }
+
+        byte[] persisted = await File.ReadAllBytesAsync(
+            databasePath,
+            TestContext.Current.CancellationToken);
+        Assert.DoesNotContain("2099-12-31"u8.ToArray(), persisted);
+
+        using V2VaultSnapshot snapshot = await store.LoadAsync(
+            TestContext.Current.CancellationToken);
+        AccountHistoryEntryV2 loaded = Assert.Single(snapshot.HistoryEntries);
+        Assert.Equal(history.Id, loaded.Id);
+        Assert.Equal(history.AccountId, loaded.AccountId);
+        Assert.Equal(history.Action, loaded.Action);
+        Assert.Equal(occurredAt, loaded.OccurredAtUtc);
+        Assert.Equal(version.Id, loaded.SecretVersionId);
+    }
+
+    [Fact]
     public async Task DpapiRootKeyProvider_PersistsOnlyProtectedKeyMaterial()
     {
         string keyPath = Path.Combine(_directory, "vault-v2.key");

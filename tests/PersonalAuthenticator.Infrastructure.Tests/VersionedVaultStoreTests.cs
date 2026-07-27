@@ -398,6 +398,204 @@ public sealed class VersionedVaultStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task CandidateActivation_RetiresPreviousSecretAndUsesAccountIdentityInSetupUri()
+    {
+        using TotpAccount account = CreateAccount(
+            "Example",
+            "alice",
+            discriminator: 0,
+            sortOrder: 0);
+        using var versioned = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+        await versioned.SaveAsync([account], TestContext.Current.CancellationToken);
+
+        using TotpAccount candidate = CreateAccount(
+            "Untrusted imported label",
+            "different account",
+            discriminator: 10,
+            sortOrder: 0);
+        await versioned.AddSecretCandidateAsync(
+            account.Id,
+            candidate,
+            TestContext.Current.CancellationToken);
+        account.UpdateDisplay(
+            "Updated Example",
+            account.AccountName,
+            new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.Zero));
+        await versioned.SaveAsync([account], TestContext.Current.CancellationToken);
+
+        IReadOnlyList<SecretVersionSummary> before =
+            await versioned.GetSecretVersionsAsync(
+                account.Id,
+                TestContext.Current.CancellationToken);
+        SecretVersionSummary candidateSummary = Assert.Single(
+            before,
+            version => version.State == SecretVersionState.Candidate);
+        Assert.Single(before, version => version.State == SecretVersionState.Active);
+
+        await versioned.ActivateSecretCandidateAsync(
+            account.Id,
+            candidateSummary.Id,
+            TestContext.Current.CancellationToken);
+
+        IReadOnlyList<SecretVersionSummary> afterActivation =
+            await versioned.GetSecretVersionsAsync(
+                account.Id,
+                TestContext.Current.CancellationToken);
+        Assert.Equal(
+            candidateSummary.Id,
+            Assert.Single(
+                afterActivation,
+                version => version.State == SecretVersionState.Active).Id);
+        Assert.Single(
+            afterActivation,
+            version => version.State == SecretVersionState.Retired);
+        Assert.DoesNotContain(
+            afterActivation,
+            version => version.State == SecretVersionState.Candidate);
+
+        IReadOnlyList<TotpAccount> loaded = await versioned.LoadAsync(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            TotpAccount active = Assert.Single(loaded);
+            Assert.Equal(candidate.Algorithm, active.Algorithm);
+            Assert.Equal(candidate.Digits, active.Digits);
+            Assert.Equal(candidate.Period, active.Period);
+            Assert.Equal(candidate.Secret.ToArray(), active.Secret.ToArray());
+        }
+        finally
+        {
+            DisposeAccounts(loaded);
+        }
+
+        SensitiveSetupInfo setup = await versioned.GetActiveSetupInfoAsync(
+            account.Id,
+            TestContext.Current.CancellationToken);
+        using ParsedTotpProvisioning parsed =
+            new ProvisioningUriParser().Parse(setup.ProvisioningUri);
+        using TotpAccount parsedAccount = parsed.CreateAccount();
+        Assert.Equal(account.Issuer, parsed.Issuer);
+        Assert.Equal(account.AccountName, parsed.AccountName);
+        Assert.Equal(candidate.Secret.ToArray(), parsedAccount.Secret.ToArray());
+
+        IReadOnlyList<AccountHistoryEntryV2> history =
+            await versioned.GetAccountHistoryAsync(
+                account.Id,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            history,
+            entry => entry.Action == AccountHistoryAction.SecretCandidateAdded);
+        Assert.Contains(
+            history,
+            entry => entry.Action == AccountHistoryAction.DisplayUpdated);
+        Assert.Contains(
+            history,
+            entry =>
+                entry.Action == AccountHistoryAction.SecretActivated &&
+                entry.SecretVersionId == candidateSummary.Id);
+    }
+
+    [Fact]
+    public async Task RemoveAndRestore_ArchivesAccountAndPreservesHistory()
+    {
+        using TotpAccount account = CreateAccount(
+            "Example",
+            "alice",
+            discriminator: 0,
+            sortOrder: 0);
+        using var versioned = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+        await versioned.SaveAsync([account], TestContext.Current.CancellationToken);
+
+        await versioned.SaveAsync([], TestContext.Current.CancellationToken);
+        IReadOnlyList<TotpAccount> afterArchive = await versioned.LoadAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Empty(afterArchive);
+        IReadOnlyList<ArchivedAccountSummary> archived =
+            await versioned.GetArchivedAccountsAsync(
+                TestContext.Current.CancellationToken);
+        Assert.Equal(account.Id, Assert.Single(archived).Id);
+
+        await versioned.RestoreArchivedAccountAsync(
+            account.Id,
+            TestContext.Current.CancellationToken);
+        IReadOnlyList<TotpAccount> restored = await versioned.LoadAsync(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.Equal(account.Id, Assert.Single(restored).Id);
+        }
+        finally
+        {
+            DisposeAccounts(restored);
+        }
+
+        IReadOnlyList<AccountHistoryEntryV2> history =
+            await versioned.GetAccountHistoryAsync(
+                account.Id,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(history, entry => entry.Action == AccountHistoryAction.Archived);
+        Assert.Contains(history, entry => entry.Action == AccountHistoryAction.Restored);
+    }
+
+    [Fact]
+    public async Task AddDuplicateAccount_RecordsTheDecisionOnBothAccounts()
+    {
+        using TotpAccount existing = CreateAccount(
+            "Example",
+            "alice",
+            discriminator: 0,
+            sortOrder: 0);
+        using TotpAccount duplicate = CreateAccount(
+            "Example",
+            "alice",
+            discriminator: 10,
+            sortOrder: 0);
+        using var versioned = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+        await versioned.SaveAsync([existing], TestContext.Current.CancellationToken);
+
+        await versioned.AddDuplicateAccountAsync(
+            existing.Id,
+            duplicate,
+            TestContext.Current.CancellationToken);
+
+        IReadOnlyList<TotpAccount> loaded = await versioned.LoadAsync(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.Equal(2, loaded.Count);
+        }
+        finally
+        {
+            DisposeAccounts(loaded);
+        }
+
+        IReadOnlyList<AccountHistoryEntryV2> existingHistory =
+            await versioned.GetAccountHistoryAsync(
+                existing.Id,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            existingHistory,
+            entry =>
+                entry.Action == AccountHistoryAction.DuplicateAddedSeparately &&
+                entry.RelatedAccountId == duplicate.Id);
+        IReadOnlyList<AccountHistoryEntryV2> duplicateHistory =
+            await versioned.GetAccountHistoryAsync(
+                duplicate.Id,
+                TestContext.Current.CancellationToken);
+        Assert.Contains(
+            duplicateHistory,
+            entry =>
+                entry.Action == AccountHistoryAction.DuplicateAddedSeparately &&
+                entry.RelatedAccountId == existing.Id);
+    }
+
+    [Fact]
     public async Task Exists_CorruptActivePointer_DoesNotFallBackToLegacyVault()
     {
         var legacy = new DpapiVaultStore(

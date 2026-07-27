@@ -13,11 +13,13 @@ namespace PersonalAuthenticator.Infrastructure.Storage;
 public sealed class V2SqliteVaultStore : IV2VaultStore
 {
     private const int ApplicationId = 0x50415632;
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
     private const int MaximumAccounts = 10_000;
     private const int MaximumSecretVersions = 100_000;
+    private const int MaximumHistoryEntries = 1_000_000;
     private const int MaximumAccountPayloadBytes = 16 * 1024;
     private const int MaximumSecretPayloadBytes = 32 * 1024;
+    private const int MaximumHistoryPayloadBytes = 8 * 1024;
     private const long MaximumDatabaseBytes = 256L * 1024 * 1024;
     private readonly IVaultRootKeyProvider _rootKeyProvider;
 
@@ -67,10 +69,12 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         byte[] rootKey = await _rootKeyProvider.LoadAsync(cancellationToken);
         var accounts = new List<VaultAccountV2>();
         var secretVersions = new List<SecretVersionV2>();
+        var historyEntries = new List<AccountHistoryEntryV2>();
         try
         {
-            await using SqliteConnection connection = CreateConnection(SqliteOpenMode.ReadOnly);
-            await OpenAndConfigureAsync(connection, writable: false, cancellationToken);
+            await using SqliteConnection connection = CreateConnection(SqliteOpenMode.ReadWrite);
+            await OpenAndConfigureAsync(connection, writable: true, cancellationToken);
+            await EnsureSchemaAsync(connection, databaseExisted: true, cancellationToken);
             await VerifySchemaAndIntegrityAsync(connection, cancellationToken);
             await LoadAccountsAsync(connection, rootKey, accounts, cancellationToken);
             await LoadSecretVersionsAsync(
@@ -78,8 +82,13 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                 rootKey,
                 secretVersions,
                 cancellationToken);
-            ValidateSnapshot(accounts, secretVersions);
-            return new V2VaultSnapshot(accounts, secretVersions);
+            await LoadHistoryEntriesAsync(
+                connection,
+                rootKey,
+                historyEntries,
+                cancellationToken);
+            ValidateSnapshot(accounts, secretVersions, historyEntries);
+            return new V2VaultSnapshot(accounts, secretVersions, historyEntries);
         }
         catch (SafeApplicationException)
         {
@@ -107,12 +116,20 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
     public async Task SaveAsync(
         IReadOnlyCollection<VaultAccountV2> accounts,
         IReadOnlyCollection<SecretVersionV2> secretVersions,
+        CancellationToken cancellationToken) =>
+        await SaveAsync(accounts, secretVersions, [], cancellationToken);
+
+    public async Task SaveAsync(
+        IReadOnlyCollection<VaultAccountV2> accounts,
+        IReadOnlyCollection<SecretVersionV2> secretVersions,
+        IReadOnlyCollection<AccountHistoryEntryV2> historyEntries,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(accounts);
         ArgumentNullException.ThrowIfNull(secretVersions);
+        ArgumentNullException.ThrowIfNull(historyEntries);
         cancellationToken.ThrowIfCancellationRequested();
-        ValidateSnapshot(accounts, secretVersions);
+        ValidateSnapshot(accounts, secretVersions, historyEntries);
 
         string directory = Path.GetDirectoryName(DatabasePath) ??
             throw new InvalidOperationException("The v2 database path must include a directory.");
@@ -137,7 +154,11 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                 await ExecuteAsync(
                     connection,
                     transaction,
-                    "DELETE FROM secret_version_records; DELETE FROM account_records;",
+                    """
+                    DELETE FROM account_history_records;
+                    DELETE FROM secret_version_records;
+                    DELETE FROM account_records;
+                    """,
                     cancellationToken);
 
                 foreach (VaultAccountV2 account in accounts.OrderBy(item => item.Id))
@@ -157,6 +178,16 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                         transaction,
                         rootKey,
                         version,
+                        cancellationToken);
+                }
+
+                foreach (AccountHistoryEntryV2 entry in historyEntries.OrderBy(item => item.Id))
+                {
+                    await InsertHistoryEntryAsync(
+                        connection,
+                        transaction,
+                        rootKey,
+                        entry,
                         cancellationToken);
                 }
 
@@ -336,6 +367,63 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         }
     }
 
+    private static async Task LoadHistoryEntriesAsync(
+        SqliteConnection connection,
+        ReadOnlyMemory<byte> rootKey,
+        List<AccountHistoryEntryV2> entries,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT history_id, account_id, nonce, ciphertext, tag
+            FROM account_history_records
+            ORDER BY history_id;
+            """;
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (entries.Count >= MaximumHistoryEntries)
+            {
+                throw InvalidDatabase("The v2 vault contains too many account-history entries.");
+            }
+
+            Guid historyId = ReadGuid(reader, 0, "history");
+            Guid accountId = ReadGuid(reader, 1, "history account");
+            byte[] nonce = ReadBlob(reader, 2, V2RecordCryptography.NonceLength, "history nonce");
+            byte[] ciphertext = ReadBlob(
+                reader,
+                3,
+                MaximumHistoryPayloadBytes,
+                "history payload");
+            byte[] tag = ReadBlob(reader, 4, V2RecordCryptography.TagLength, "history tag");
+            byte[] associatedData = CreateHistoryAssociatedData(accountId, historyId);
+            byte[] plaintext = [];
+            try
+            {
+                plaintext = V2RecordCryptography.Decrypt(
+                    nonce,
+                    ciphertext,
+                    tag,
+                    rootKey.Span,
+                    associatedData);
+                entries.Add(
+                    V2RecordSerializer.DeserializeHistoryEntry(
+                        plaintext,
+                        historyId,
+                        accountId));
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(nonce);
+                CryptographicOperations.ZeroMemory(ciphertext);
+                CryptographicOperations.ZeroMemory(tag);
+                CryptographicOperations.ZeroMemory(associatedData);
+                CryptographicOperations.ZeroMemory(plaintext);
+            }
+        }
+    }
+
     private static async Task InsertAccountAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -432,9 +520,50 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         }
     }
 
+    private static async Task InsertHistoryEntryAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ReadOnlyMemory<byte> rootKey,
+        AccountHistoryEntryV2 entry,
+        CancellationToken cancellationToken)
+    {
+        byte[] plaintext = V2RecordSerializer.SerializeHistoryEntry(entry);
+        byte[] associatedData = CreateHistoryAssociatedData(entry.AccountId, entry.Id);
+        EncryptedPayload? encrypted = null;
+        try
+        {
+            encrypted = V2RecordCryptography.Encrypt(
+                plaintext,
+                rootKey.Span,
+                associatedData);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO account_history_records(
+                    history_id, account_id, nonce, ciphertext, tag)
+                VALUES ($historyId, $accountId, $nonce, $ciphertext, $tag);
+                """;
+            command.Parameters.AddWithValue("$historyId", entry.Id.ToString("D"));
+            command.Parameters.AddWithValue("$accountId", entry.AccountId.ToString("D"));
+            command.Parameters.Add("$nonce", SqliteType.Blob).Value = encrypted.Nonce;
+            command.Parameters.Add("$ciphertext", SqliteType.Blob).Value =
+                encrypted.Ciphertext;
+            command.Parameters.Add("$tag", SqliteType.Blob).Value = encrypted.Tag;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            CryptographicOperations.ZeroMemory(associatedData);
+            ClearEncryptedPayload(encrypted);
+        }
+    }
+
     private static void ValidateSnapshot(
         IReadOnlyCollection<VaultAccountV2> accounts,
-        IReadOnlyCollection<SecretVersionV2> secretVersions)
+        IReadOnlyCollection<SecretVersionV2> secretVersions,
+        IReadOnlyCollection<AccountHistoryEntryV2> historyEntries)
     {
         if (accounts.Count > MaximumAccounts)
         {
@@ -448,6 +577,13 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
             throw new SafeApplicationException(
                 "VaultV2.TooManySecretVersions",
                 "The v2 vault contains too many secret versions.");
+        }
+
+        if (historyEntries.Count > MaximumHistoryEntries)
+        {
+            throw new SafeApplicationException(
+                "VaultV2.TooManyHistoryEntries",
+                "The v2 vault contains too many account-history entries.");
         }
 
         Dictionary<Guid, VaultAccountV2> accountsById;
@@ -500,6 +636,44 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                     "A v2 account must contain exactly one active secret version.");
             }
         }
+
+        HashSet<Guid> historyIds = [];
+        foreach (AccountHistoryEntryV2 entry in historyEntries)
+        {
+            if (!historyIds.Add(entry.Id))
+            {
+                throw new SafeApplicationException(
+                    "VaultV2.DuplicateIdentifier",
+                    "The v2 vault contains duplicate history identifiers.");
+            }
+
+            if (!accountsById.ContainsKey(entry.AccountId))
+            {
+                throw InvalidDatabase(
+                    "A v2 account-history entry refers to an account that does not exist.");
+            }
+
+            if (entry.RelatedAccountId is Guid relatedAccountId &&
+                !accountsById.ContainsKey(relatedAccountId))
+            {
+                throw InvalidDatabase(
+                    "A v2 account-history entry refers to a related account that does not exist.");
+            }
+
+            if (entry.SecretVersionId is Guid versionId &&
+                !versionsById.ContainsKey(versionId))
+            {
+                throw InvalidDatabase(
+                    "A v2 account-history entry refers to a secret version that does not exist.");
+            }
+
+            if (entry.PreviousSecretVersionId is Guid previousVersionId &&
+                !versionsById.ContainsKey(previousVersionId))
+            {
+                throw InvalidDatabase(
+                    "A v2 account-history entry refers to a previous secret version that does not exist.");
+            }
+        }
     }
 
     private static async Task EnsureSchemaAsync(
@@ -516,7 +690,9 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
             "PRAGMA user_version;",
             cancellationToken);
 
-        if (databaseExisted && (applicationId != ApplicationId || schemaVersion != SchemaVersion))
+        if (databaseExisted &&
+            (applicationId != ApplicationId ||
+             schemaVersion is < 1 or > SchemaVersion))
         {
             throw InvalidDatabase("The selected database is not a supported v2 vault.");
         }
@@ -560,6 +736,60 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                     ) STRICT;
                     CREATE INDEX secret_version_account_idx
                         ON secret_version_records(account_id);
+                    CREATE TABLE account_history_records (
+                        history_id TEXT PRIMARY KEY NOT NULL
+                            CHECK(length(history_id) = 36),
+                        account_id TEXT NOT NULL
+                            CHECK(length(account_id) = 36),
+                        nonce BLOB NOT NULL CHECK(length(nonce) = 12),
+                        ciphertext BLOB NOT NULL
+                            CHECK(length(ciphertext) BETWEEN 1 AND {MaximumHistoryPayloadBytes}),
+                        tag BLOB NOT NULL CHECK(length(tag) = 16),
+                        FOREIGN KEY(account_id) REFERENCES account_records(account_id)
+                            ON DELETE CASCADE
+                    ) STRICT;
+                    CREATE INDEX account_history_account_idx
+                        ON account_history_records(account_id);
+                    """,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+
+            return;
+        }
+
+        if (applicationId == ApplicationId && schemaVersion == 1)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken);
+            try
+            {
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    $"""
+                    CREATE TABLE account_history_records (
+                        history_id TEXT PRIMARY KEY NOT NULL
+                            CHECK(length(history_id) = 36),
+                        account_id TEXT NOT NULL
+                            CHECK(length(account_id) = 36),
+                        nonce BLOB NOT NULL CHECK(length(nonce) = 12),
+                        ciphertext BLOB NOT NULL
+                            CHECK(length(ciphertext) BETWEEN 1 AND {MaximumHistoryPayloadBytes}),
+                        tag BLOB NOT NULL CHECK(length(tag) = 16),
+                        FOREIGN KEY(account_id) REFERENCES account_records(account_id)
+                            ON DELETE CASCADE
+                    ) STRICT;
+                    CREATE INDEX account_history_account_idx
+                        ON account_history_records(account_id);
+                    PRAGMA user_version = {SchemaVersion.ToString(CultureInfo.InvariantCulture)};
                     """,
                     cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
@@ -722,6 +952,9 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
 
     private static byte[] CreateDekAssociatedData(Guid accountId, Guid versionId) =>
         Encoding.UTF8.GetBytes($"PAV2/dek/{accountId:D}/{versionId:D}/1");
+
+    private static byte[] CreateHistoryAssociatedData(Guid accountId, Guid historyId) =>
+        Encoding.UTF8.GetBytes($"PAV2/history/{accountId:D}/{historyId:D}/1");
 
     private static SafeApplicationException InvalidDatabase(string message) =>
         new("VaultV2.InvalidDatabase", message);

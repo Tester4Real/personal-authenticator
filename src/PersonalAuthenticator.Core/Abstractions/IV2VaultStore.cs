@@ -14,4 +14,10 @@ public interface IV2VaultStore
         IReadOnlyCollection<VaultAccountV2> accounts,
         IReadOnlyCollection<SecretVersionV2> secretVersions,
         CancellationToken cancellationToken);
+
+    Task SaveAsync(
+        IReadOnlyCollection<VaultAccountV2> accounts,
+        IReadOnlyCollection<SecretVersionV2> secretVersions,
+        IReadOnlyCollection<AccountHistoryEntryV2> historyEntries,
+        CancellationToken cancellationToken);
 }

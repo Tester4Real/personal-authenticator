@@ -16,11 +16,15 @@ public interface IVaultService : IDisposable
 
     Task UnlockAsync(CancellationToken cancellationToken);
 
+    Task ReloadAsync(CancellationToken cancellationToken);
+
     Task LockAsync(CancellationToken cancellationToken);
 
     Task AddAsync(TotpAccount account, CancellationToken cancellationToken);
 
     Guid? FindLikelyDuplicate(TotpAccount account);
+
+    DuplicateAccountMatch? FindDuplicate(TotpAccount account);
 
     Task AddAsync(
         TotpAccount account,
