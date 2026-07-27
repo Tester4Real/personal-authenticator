@@ -19,8 +19,9 @@ Personal Authenticator is a Windows-only, local-first TOTP authenticator built w
 - Portable `.pab` backups using PBKDF2-HMAC-SHA-512 and AES-256-GCM
 - Alternating verified Recovery-A/Recovery-B bundles using Argon2id and AES-256-GCM
 - Optional encrypted local-folder synchronisation between Windows installations, with an immutable operation log, transactional outbox, deterministic merge, and explicit conflict resolution
+- Optional encrypted private-repository GitHub synchronisation with DPAPI-protected runtime credentials, offline outbox, repair, and verified repository replacement
 - Four whole-import restore policies: merge/skip, merge/replace matches, merge/keep duplicates, or exact replacement
-- No GitHub/API synchronisation, analytics, advertisements, telemetry, or crash upload; local-folder sync is optional and disabled until configured
+- No analytics, advertisements, telemetry, or crash upload; every sync backend is optional and disabled until explicitly configured
 
 ## Screenshot
 

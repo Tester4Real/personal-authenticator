@@ -34,7 +34,9 @@ The 56-byte fixed header is AES-GCM associated data. The derived key is 256 bits
 
 ## Encrypted payload
 
-The binary payload records the format version, creation time, monotonic vault change sequence, and bounded collections of every account, active/candidate/retired secret version, and encrypted history relationship.
+Payload version 2 records the format version, creation time, monotonic vault change sequence, bounded collections of every account, active/candidate/retired secret version, encrypted history relationship, immutable operation bytes, public device identity, per-device sequence coverage, unresolved conflicts, outbox operation identifiers, protocol requirements, and credential-free sync metadata.
+
+Payload version 1 remains importable. Because it has no immutable operation history, restoring it starts a new sync history and the Windows UI displays that warning before restore. Payload version 2 restores the causal graph, outbox, conflicts, and materialized state together. GitHub tokens, device-private material, local DPAPI root keys, and shared sync keys are never included.
 
 Lengths and counts are checked before allocation. UTF-8 decoding is strict. Duplicate identifiers, missing relationships, invalid active-secret references, malformed fields, trailing bytes, and oversized collections reject the complete bundle.
 

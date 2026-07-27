@@ -190,6 +190,9 @@ Secrets, setup URIs, QR payloads, backup passwords, derived keys, and OTP codes 
 | `IUserVerificationService` | Windows user-presence capability and prompt |
 | `IAutomaticLockMonitor` | Windows session-lock and suspend notifications |
 | `IAppSettingsStore` | Non-sensitive preference persistence |
+| `IGitHubSyncService` | Optional encrypted GitHub transport, health, repair, replacement, and credential deletion |
+
+The Windows v2 GitHub backend is a transport over the same immutable operation log as local-folder sync. It never replaces SQLite as the source of truth. See `GITHUB_SYNC_PROTOCOL.md` for repository layout, DPAPI credential separation, verification, rollback, repair, and replacement rules.
 
 ## Why WinUI 3 and MVVM
 
