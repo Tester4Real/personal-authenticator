@@ -5,7 +5,7 @@ using PersonalAuthenticator.Core.Exceptions;
 
 namespace PersonalAuthenticator.Infrastructure.Storage;
 
-public sealed class VersionedVaultStore : IVaultStore, IDisposable
+public sealed class VersionedVaultStore : IVaultStore, IVaultMigrationCoordinator, IDisposable
 {
     private readonly string _baseDirectory;
     private readonly ILogger<DpapiVaultStore> _legacyLogger;
@@ -74,9 +74,7 @@ public sealed class VersionedVaultStore : IVaultStore, IDisposable
             }
             else if (await _defaultLegacyStore.ExistsAsync(cancellationToken))
             {
-                pointer = await _migrationService.MigrateAsync(
-                    _defaultLegacyStore,
-                    cancellationToken);
+                throw MigrationChoiceRequired();
             }
             else
             {
@@ -110,11 +108,7 @@ public sealed class VersionedVaultStore : IVaultStore, IDisposable
 
             if (await _defaultLegacyStore.ExistsAsync(cancellationToken))
             {
-                ActiveVaultPointer migrated = await _migrationService.MigrateAsync(
-                    _defaultLegacyStore,
-                    cancellationToken);
-                await CreateSelectedStore(migrated).SaveAsync(accounts, cancellationToken);
-                return;
+                throw MigrationChoiceRequired();
             }
 
             await CreateAndActivateV2Async(accounts, cancellationToken);
@@ -177,6 +171,106 @@ public sealed class VersionedVaultStore : IVaultStore, IDisposable
             {
                 DisposeAccounts(activeAccounts);
             }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<VaultMigrationStatus> GetStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_pointerStore.Exists)
+            {
+                return await _defaultLegacyStore.ExistsAsync(cancellationToken)
+                    ? VaultMigrationStatus.ChoiceRequired
+                    : VaultMigrationStatus.NotRequired;
+            }
+
+            ActiveVaultPointer pointer = await _pointerStore.LoadAsync(cancellationToken);
+            return pointer.Mode switch
+            {
+                ActiveVaultMode.LegacyLocalV1 => VaultMigrationStatus.UsingLegacyV1,
+                ActiveVaultMode.LocalV2 => VaultMigrationStatus.UsingLocalV2,
+                _ => throw new SafeApplicationException(
+                    "VaultSelector.Invalid",
+                    "The active vault selector mode is not supported."),
+            };
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task ApplyChoiceAsync(
+        VaultMigrationChoice choice,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(choice))
+        {
+            throw new ArgumentOutOfRangeException(nameof(choice));
+        }
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (choice == VaultMigrationChoice.Cancel)
+            {
+                return;
+            }
+
+            ActiveVaultPointer? currentPointer = _pointerStore.Exists
+                ? await _pointerStore.LoadAsync(cancellationToken)
+                : null;
+            if (choice == VaultMigrationChoice.ContinueUsingV1)
+            {
+                if (currentPointer?.Mode == ActiveVaultMode.LegacyLocalV1)
+                {
+                    return;
+                }
+
+                if (currentPointer is not null ||
+                    !await _defaultLegacyStore.ExistsAsync(cancellationToken))
+                {
+                    throw new SafeApplicationException(
+                        "VaultMigration.LegacyUnavailable",
+                        "A legacy v1 vault is not available.");
+                }
+
+                await _pointerStore.SaveAsync(
+                    new ActiveVaultPointer(
+                        ActiveVaultMode.LegacyLocalV1,
+                        Path.GetFileName(_defaultLegacyStore.VaultPath),
+                        LegacySourceSha256: null,
+                        DateTimeOffset.UtcNow),
+                    cancellationToken);
+                return;
+            }
+
+            if (currentPointer?.Mode == ActiveVaultMode.LocalV2)
+            {
+                return;
+            }
+
+            DpapiVaultStore sourceStore = currentPointer is null
+                ? _defaultLegacyStore
+                : new DpapiVaultStore(
+                    _legacyLogger,
+                    _baseDirectory,
+                    currentPointer.StoreFileName);
+            if (!await sourceStore.ExistsAsync(cancellationToken))
+            {
+                throw new SafeApplicationException(
+                    "VaultMigration.LegacyUnavailable",
+                    "A legacy v1 vault is not available.");
+            }
+
+            await _migrationService.MigrateAsync(sourceStore, cancellationToken);
         }
         finally
         {
@@ -268,4 +362,9 @@ public sealed class VersionedVaultStore : IVaultStore, IDisposable
             account.Dispose();
         }
     }
+
+    private static SafeApplicationException MigrationChoiceRequired() =>
+        new(
+            "VaultMigration.ChoiceRequired",
+            "Choose whether to upgrade the legacy vault or continue using v1 before unlocking.");
 }

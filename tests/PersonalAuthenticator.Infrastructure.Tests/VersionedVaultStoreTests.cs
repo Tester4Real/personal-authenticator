@@ -13,7 +13,7 @@ public sealed class VersionedVaultStoreTests : IDisposable
         Path.Combine(Path.GetTempPath(), $"pa-migration-tests-{Guid.NewGuid():N}");
 
     [Fact]
-    public async Task Load_LegacyVault_MigratesAndActivatesOnlyAfterFullVerification()
+    public async Task UpgradeChoice_MigratesAndActivatesOnlyAfterFullVerification()
     {
         var legacy = new DpapiVaultStore(
             NullLogger<DpapiVaultStore>.Instance,
@@ -36,6 +36,20 @@ public sealed class VersionedVaultStoreTests : IDisposable
         using var versioned = new VersionedVaultStore(
             NullLogger<DpapiVaultStore>.Instance,
             _directory);
+        Assert.Equal(
+            VaultMigrationStatus.ChoiceRequired,
+            await versioned.GetStatusAsync(TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(Path.Combine(_directory, "active-store.ptr")));
+        Assert.False(File.Exists(Path.Combine(_directory, "vault-v2.key")));
+        Assert.Empty(Directory.GetFiles(_directory, "vault-v2-*.db"));
+
+        await versioned.ApplyChoiceAsync(
+            VaultMigrationChoice.UpgradeToV2,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            VaultMigrationStatus.UsingLocalV2,
+            await versioned.GetStatusAsync(TestContext.Current.CancellationToken));
         IReadOnlyList<TotpAccount> migrated =
             await versioned.LoadAsync(TestContext.Current.CancellationToken);
         try
@@ -95,7 +109,7 @@ public sealed class VersionedVaultStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Migration_PointerActivationFailure_LeavesLegacySourceUsableAndUnchanged()
+    public async Task UpgradeChoice_InterruptedActivation_LeavesChoicePendingAndLegacyUnchanged()
     {
         var legacy = new DpapiVaultStore(
             NullLogger<DpapiVaultStore>.Instance,
@@ -109,17 +123,21 @@ public sealed class VersionedVaultStoreTests : IDisposable
         byte[] original = await File.ReadAllBytesAsync(
             legacy.VaultPath,
             TestContext.Current.CancellationToken);
-        string blockedPointerPath = Path.Combine(_directory, "blocked-selector");
+        string blockedPointerPath = Path.Combine(_directory, "active-store.ptr");
         Directory.CreateDirectory(blockedPointerPath);
-        var pointerStore = new ActiveVaultPointerStore(blockedPointerPath);
-        var migration = new V1ToV2MigrationService(_directory, pointerStore);
+        using var versioned = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
 
         await Assert.ThrowsAsync<SafeApplicationException>(
-            () => migration.MigrateAsync(
-                legacy,
+            () => versioned.ApplyChoiceAsync(
+                VaultMigrationChoice.UpgradeToV2,
                 TestContext.Current.CancellationToken));
 
-        Assert.False(pointerStore.Exists);
+        Assert.Equal(
+            VaultMigrationStatus.ChoiceRequired,
+            await versioned.GetStatusAsync(TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(blockedPointerPath));
         Assert.Equal(
             original,
             await File.ReadAllBytesAsync(
@@ -135,6 +153,104 @@ public sealed class VersionedVaultStoreTests : IDisposable
         {
             DisposeAccounts(reopened);
         }
+
+        Directory.Delete(blockedPointerPath);
+        await versioned.ApplyChoiceAsync(
+            VaultMigrationChoice.UpgradeToV2,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(
+            VaultMigrationStatus.UsingLocalV2,
+            await versioned.GetStatusAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ContinueChoice_PersistsLegacySelectionWithoutCreatingV2Storage()
+    {
+        var legacy = new DpapiVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+        using TotpAccount account = CreateAccount(
+            "Example",
+            "alice",
+            discriminator: 0,
+            sortOrder: 0);
+        await legacy.SaveAsync([account], TestContext.Current.CancellationToken);
+        byte[] original = await File.ReadAllBytesAsync(
+            legacy.VaultPath,
+            TestContext.Current.CancellationToken);
+        using var versioned = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+
+        await versioned.ApplyChoiceAsync(
+            VaultMigrationChoice.ContinueUsingV1,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            VaultMigrationStatus.UsingLegacyV1,
+            await versioned.GetStatusAsync(TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(Path.Combine(_directory, "vault-v2.key")));
+        Assert.Empty(Directory.GetFiles(_directory, "vault-v2-*.db"));
+        Assert.False(Directory.Exists(Path.Combine(_directory, "migration-recovery")));
+        IReadOnlyList<TotpAccount> loaded = await versioned.LoadAsync(
+            TestContext.Current.CancellationToken);
+        try
+        {
+            VaultAccountVerifier.VerifyEquivalent([account], loaded);
+        }
+        finally
+        {
+            DisposeAccounts(loaded);
+        }
+
+        using var restarted = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+        Assert.Equal(
+            VaultMigrationStatus.UsingLegacyV1,
+            await restarted.GetStatusAsync(TestContext.Current.CancellationToken));
+        await restarted.ApplyChoiceAsync(
+            VaultMigrationChoice.UpgradeToV2,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(
+            VaultMigrationStatus.UsingLocalV2,
+            await restarted.GetStatusAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            original,
+            await File.ReadAllBytesAsync(
+                legacy.VaultPath,
+                TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task CancelChoice_IsNoOpAndLeavesMigrationPromptPending()
+    {
+        var legacy = new DpapiVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+        using TotpAccount account = CreateAccount(
+            "Example",
+            "alice",
+            discriminator: 0,
+            sortOrder: 0);
+        await legacy.SaveAsync([account], TestContext.Current.CancellationToken);
+        using var versioned = new VersionedVaultStore(
+            NullLogger<DpapiVaultStore>.Instance,
+            _directory);
+
+        await versioned.ApplyChoiceAsync(
+            VaultMigrationChoice.Cancel,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            VaultMigrationStatus.ChoiceRequired,
+            await versioned.GetStatusAsync(TestContext.Current.CancellationToken));
+        Assert.False(File.Exists(Path.Combine(_directory, "active-store.ptr")));
+        Assert.False(File.Exists(Path.Combine(_directory, "vault-v2.key")));
+        Assert.Empty(Directory.GetFiles(_directory, "vault-v2-*.db"));
+        SafeApplicationException exception = await Assert.ThrowsAsync<SafeApplicationException>(
+            () => versioned.LoadAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("VaultMigration.ChoiceRequired", exception.ErrorCode);
     }
 
     [Fact]
@@ -157,6 +273,9 @@ public sealed class VersionedVaultStoreTests : IDisposable
         using var versioned = new VersionedVaultStore(
             NullLogger<DpapiVaultStore>.Instance,
             _directory);
+        await versioned.ApplyChoiceAsync(
+            VaultMigrationChoice.UpgradeToV2,
+            TestContext.Current.CancellationToken);
         IReadOnlyList<TotpAccount> current =
             await versioned.LoadAsync(TestContext.Current.CancellationToken);
         using TotpAccount added = CreateAccount(
@@ -293,6 +412,9 @@ public sealed class VersionedVaultStoreTests : IDisposable
         using var versioned = new VersionedVaultStore(
             NullLogger<DpapiVaultStore>.Instance,
             _directory);
+        await versioned.ApplyChoiceAsync(
+            VaultMigrationChoice.UpgradeToV2,
+            TestContext.Current.CancellationToken);
         IReadOnlyList<TotpAccount> migrated =
             await versioned.LoadAsync(TestContext.Current.CancellationToken);
         DisposeAccounts(migrated);

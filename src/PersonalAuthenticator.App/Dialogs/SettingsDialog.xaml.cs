@@ -24,6 +24,7 @@ public sealed partial class SettingsDialog : ContentDialog
         _backupService = backupService;
         _windowHandle = windowHandle;
         PopulateSettings(viewModel.Settings);
+        PopulateMigrationState();
     }
 
     private async void Dialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
@@ -113,6 +114,33 @@ public sealed partial class SettingsDialog : ContentDialog
         }
     }
 
+    private async void UpgradeVaultButton_Click(object sender, RoutedEventArgs args)
+    {
+        UpgradeVaultButton.IsEnabled = false;
+        try
+        {
+            await _viewModel.ApplyMigrationChoiceAsync(
+                VaultMigrationChoice.UpgradeToV2,
+                CancellationToken.None);
+            PopulateMigrationState();
+            ShowBackupStatus(
+                "The verified v2 vault is active. The original v1 vault remains unchanged.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The vault could not be upgraded safely.",
+                isError: true);
+        }
+        finally
+        {
+            UpgradeVaultButton.IsEnabled = _viewModel.CanUpgradeVault;
+        }
+    }
+
     private async void ImportButton_Click(object sender, RoutedEventArgs args)
     {
         if (!_viewModel.IsUnlocked)
@@ -185,6 +213,24 @@ public sealed partial class SettingsDialog : ContentDialog
         ClipboardDelayBox.Value = settings.ClipboardClearSeconds;
         VerificationToggle.IsOn = settings.RequireVerificationForCodes;
         StartUnlockedToggle.IsOn = settings.StartUnlocked;
+    }
+
+    private void PopulateMigrationState()
+    {
+        VaultModeText.Text = _viewModel.MigrationStatus switch
+        {
+            VaultMigrationStatus.ChoiceRequired =>
+                "An existing v1 vault was detected. No v2 storage has been created.",
+            VaultMigrationStatus.UsingLegacyV1 =>
+                "The app is continuing to use the original v1 vault.",
+            VaultMigrationStatus.UsingLocalV2 =>
+                "The verified encrypted v2 vault is active.",
+            _ => "No legacy vault migration is required.",
+        };
+        UpgradeVaultButton.Visibility = _viewModel.CanUpgradeVault
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        UpgradeVaultButton.IsEnabled = _viewModel.CanUpgradeVault;
     }
 
     private void ClearPasswords()

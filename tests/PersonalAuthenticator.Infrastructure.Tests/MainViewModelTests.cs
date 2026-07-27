@@ -171,7 +171,8 @@ public sealed class MainViewModelTests
                 clock,
                 clipboard,
                 new FakeVerification(),
-                settingsStore);
+                settingsStore,
+                new FakeMigrationCoordinator());
             await viewModel.InitialiseAsync(CancellationToken.None);
             return new TestHarness(vault, viewModel, clock, clipboard, settingsStore);
         }
@@ -241,6 +242,18 @@ public sealed class MainViewModelTests
             _settings = settings;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FakeMigrationCoordinator : IVaultMigrationCoordinator
+    {
+        public Task<VaultMigrationStatus> GetStatusAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult(VaultMigrationStatus.NotRequired);
+
+        public Task ApplyChoiceAsync(
+            VaultMigrationChoice choice,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 
     private sealed class InMemoryStore : IVaultStore

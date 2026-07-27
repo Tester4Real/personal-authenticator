@@ -58,6 +58,8 @@ public partial class App : Application
         services.AddSingleton<VersionedVaultStore>();
         services.AddSingleton<IVaultStore>(
             provider => provider.GetRequiredService<VersionedVaultStore>());
+        services.AddSingleton<IVaultMigrationCoordinator>(
+            provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IVaultService, VaultService>();
         services.AddSingleton<IBackupService, PasswordBackupService>();
         services.AddSingleton<IQrCodeDecoder, LocalQrCodeDecoder>();

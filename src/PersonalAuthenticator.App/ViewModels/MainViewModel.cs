@@ -15,6 +15,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly ISecureClipboardService _clipboard;
     private readonly IUserVerificationService _verification;
     private readonly IAppSettingsStore _settingsStore;
+    private readonly IVaultMigrationCoordinator _migrationCoordinator;
     private readonly Stopwatch _monotonicClock = Stopwatch.StartNew();
     private DateTimeOffset _lastWallClock;
     private TimeSpan _lastMonotonic;
@@ -26,7 +27,8 @@ public sealed partial class MainViewModel : ObservableObject
         IClock clock,
         ISecureClipboardService clipboard,
         IUserVerificationService verification,
-        IAppSettingsStore settingsStore)
+        IAppSettingsStore settingsStore,
+        IVaultMigrationCoordinator migrationCoordinator)
     {
         _vault = vault;
         _generator = generator;
@@ -34,6 +36,7 @@ public sealed partial class MainViewModel : ObservableObject
         _clipboard = clipboard;
         _verification = verification;
         _settingsStore = settingsStore;
+        _migrationCoordinator = migrationCoordinator;
         _vault.AccountsChanged += OnVaultAccountsChanged;
         _vault.StateChanged += OnVaultStateChanged;
     }
@@ -41,6 +44,17 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<AccountCardViewModel> VisibleAccounts { get; } = [];
 
     public AppSettings Settings { get; private set; } = new();
+
+    public VaultMigrationStatus MigrationStatus { get; private set; } =
+        VaultMigrationStatus.NotRequired;
+
+    public bool IsMigrationChoiceRequired =>
+        MigrationStatus == VaultMigrationStatus.ChoiceRequired;
+
+    public bool CanUpgradeVault =>
+        MigrationStatus is
+            VaultMigrationStatus.ChoiceRequired or
+            VaultMigrationStatus.UsingLegacyV1;
 
     public bool IsUnlocked => _vault.State == VaultState.Unlocked;
 
@@ -66,7 +80,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         Settings = await _settingsStore.LoadAsync(cancellationToken);
         await _vault.InitialiseAsync(unlock: false, cancellationToken);
-        if (Settings.StartUnlocked && _vault.State == VaultState.Locked)
+        await RefreshMigrationStatusAsync(cancellationToken);
+        if (Settings.StartUnlocked &&
+            _vault.State == VaultState.Locked &&
+            !IsMigrationChoiceRequired)
         {
             await UnlockAsync(cancellationToken);
         }
@@ -110,6 +127,13 @@ public sealed partial class MainViewModel : ObservableObject
             return true;
         }
 
+        if (IsMigrationChoiceRequired)
+        {
+            throw new SafeApplicationException(
+                "VaultMigration.ChoiceRequired",
+                "Choose whether to upgrade the legacy vault or continue using v1 before unlocking.");
+        }
+
         bool verified = await _verification.RequestAsync(
             "Verify your identity to unlock Personal Authenticator",
             cancellationToken);
@@ -123,6 +147,26 @@ public sealed partial class MainViewModel : ObservableObject
         RebuildVisibleAccounts();
         RefreshCodes();
         return true;
+    }
+
+    public async Task ApplyMigrationChoiceAsync(
+        VaultMigrationChoice choice,
+        CancellationToken cancellationToken)
+    {
+        await _migrationCoordinator.ApplyChoiceAsync(choice, cancellationToken);
+        await RefreshMigrationStatusAsync(cancellationToken);
+        if (choice == VaultMigrationChoice.UpgradeToV2)
+        {
+            Notify(
+                "Vault upgraded",
+                "The v2 vault was verified and activated. The original v1 vault remains unchanged.");
+        }
+        else if (choice == VaultMigrationChoice.ContinueUsingV1)
+        {
+            Notify(
+                "Continuing with v1",
+                "The app will keep using the original local vault. You can upgrade later from Settings.");
+        }
     }
 
     public async Task LockAsync(CancellationToken cancellationToken)
@@ -294,6 +338,14 @@ public sealed partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(IsUnlocked));
         OnPropertyChanged(nameof(IsLocked));
         OnPropertyChanged(nameof(LockButtonLabel));
+    }
+
+    private async Task RefreshMigrationStatusAsync(CancellationToken cancellationToken)
+    {
+        MigrationStatus = await _migrationCoordinator.GetStatusAsync(cancellationToken);
+        OnPropertyChanged(nameof(MigrationStatus));
+        OnPropertyChanged(nameof(IsMigrationChoiceRequired));
+        OnPropertyChanged(nameof(CanUpgradeVault));
     }
 
     private void OnVaultAccountsChanged(object? sender, EventArgs args) => RebuildVisibleAccounts();

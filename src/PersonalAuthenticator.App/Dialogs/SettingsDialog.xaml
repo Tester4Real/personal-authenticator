@@ -60,6 +60,27 @@
         </ScrollViewer>
       </TabViewItem>
 
+      <TabViewItem Header="Vault storage" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="12">
+            <TextBlock FontWeight="SemiBold" Text="Local vault format" />
+            <TextBlock
+                x:Name="VaultModeText"
+                TextWrapping="Wrap" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="A v2 upgrade creates and verifies a separate encrypted vault. The original vault.pav remains unchanged, and rollback remains available."
+                Severity="Informational" />
+            <Button
+                x:Name="UpgradeVaultButton"
+                Click="UpgradeVaultButton_Click"
+                Content="Upgrade to v2…"
+                HorizontalAlignment="Left" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
       <TabViewItem Header="Backup &amp; restore" IsClosable="False">
         <ScrollViewer Padding="8,16,8,8">
           <StackPanel Spacing="12">

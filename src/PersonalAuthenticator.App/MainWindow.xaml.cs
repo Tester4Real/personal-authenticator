@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly AppWindow _appWindow;
     private DateTimeOffset _lastActivity = DateTimeOffset.UtcNow;
     private bool _initialised;
+    private bool _migrationPromptShowing;
     private bool _shutdownStarted;
     private bool _disposed;
 
@@ -96,6 +97,16 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             await ViewModel.InitialiseAsync(_lifetime.Token);
             ApplyTheme();
+            bool migrationWasRequired = ViewModel.IsMigrationChoiceRequired;
+            bool migrationResolved = await EnsureMigrationChoiceResolvedAsync();
+            if (migrationWasRequired &&
+                migrationResolved &&
+                ViewModel.Settings.StartUnlocked &&
+                ViewModel.IsLocked)
+            {
+                await ViewModel.UnlockAsync(_lifetime.Token);
+            }
+
             _timer.Start();
         }
         catch (Exception exception)
@@ -188,6 +199,11 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         try
         {
+            if (!await EnsureMigrationChoiceResolvedAsync())
+            {
+                return;
+            }
+
             await ViewModel.UnlockAsync(_lifetime.Token);
             _lastActivity = DateTimeOffset.UtcNow;
         }
@@ -211,7 +227,9 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private async void AddAccountButton_Click(object sender, RoutedEventArgs args)
     {
-        if (!ViewModel.IsUnlocked && !await ViewModel.UnlockAsync(_lifetime.Token))
+        if (!ViewModel.IsUnlocked &&
+            (!await EnsureMigrationChoiceResolvedAsync() ||
+             !await ViewModel.UnlockAsync(_lifetime.Token)))
         {
             return;
         }
@@ -411,6 +429,74 @@ public sealed partial class MainWindow : Window, IDisposable
         };
         await dialog.ShowAsync();
         ApplyTheme();
+    }
+
+    private async Task<bool> EnsureMigrationChoiceResolvedAsync()
+    {
+        if (!ViewModel.IsMigrationChoiceRequired)
+        {
+            return true;
+        }
+
+        if (_migrationPromptShowing)
+        {
+            return false;
+        }
+
+        _migrationPromptShowing = true;
+        try
+        {
+            var content = new StackPanel { Spacing = 12 };
+            content.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        "Personal Authenticator found your existing v1 vault. " +
+                        "Upgrading creates a separate encrypted v2 vault and verifies every account before activation.",
+                    TextWrapping = TextWrapping.Wrap,
+                });
+            content.Children.Add(
+                new InfoBar
+                {
+                    IsClosable = false,
+                    IsOpen = true,
+                    Severity = InfoBarSeverity.Informational,
+                    Message =
+                        "Your original vault.pav remains unchanged and a migration recovery copy is retained. " +
+                        "You can also continue using v1 and upgrade later from Settings.",
+                });
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Upgrade your local vault to v2?",
+                Content = content,
+                PrimaryButtonText = "Upgrade to v2",
+                SecondaryButtonText = "Continue using v1",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            VaultMigrationChoice choice = await dialog.ShowAsync() switch
+            {
+                ContentDialogResult.Primary => VaultMigrationChoice.UpgradeToV2,
+                ContentDialogResult.Secondary => VaultMigrationChoice.ContinueUsingV1,
+                _ => VaultMigrationChoice.Cancel,
+            };
+
+            try
+            {
+                await ViewModel.ApplyMigrationChoiceAsync(choice, _lifetime.Token);
+                return choice != VaultMigrationChoice.Cancel;
+            }
+            catch (Exception exception)
+            {
+                ViewModel.NotifyError(exception);
+                return false;
+            }
+        }
+        finally
+        {
+            _migrationPromptShowing = false;
+        }
     }
 
     private async Task RunSafelyAsync(Func<Task> action)
