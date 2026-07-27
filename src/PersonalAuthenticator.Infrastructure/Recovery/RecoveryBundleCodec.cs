@@ -4,6 +4,7 @@ using System.Text;
 using Konscious.Security.Cryptography;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
+using PersonalAuthenticator.Infrastructure.Sync;
 
 namespace PersonalAuthenticator.Infrastructure.Recovery;
 
@@ -37,10 +38,14 @@ internal sealed class RecoveryBundleCodec
         V2VaultSnapshot snapshot,
         ReadOnlyMemory<char> password,
         DateTimeOffset createdAtUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SyncRecoveryState? syncState = null)
     {
         ValidatePassword(password);
-        byte[] plaintext = RecoveryPayloadSerializer.Serialize(snapshot, createdAtUtc);
+        byte[] plaintext = RecoveryPayloadSerializer.Serialize(
+            snapshot,
+            createdAtUtc,
+            syncState);
         byte[] passwordBytes = EncodePassword(password);
         byte[] salt = RandomNumberGenerator.GetBytes(SaltLength);
         byte[] nonce = RandomNumberGenerator.GetBytes(NonceLength);
@@ -330,7 +335,8 @@ internal sealed record DecodedRecoveryBundle(
             Payload.Snapshot.ChangeSequence,
             Payload.Snapshot.Accounts.Count,
             Payload.Snapshot.SecretVersions.Count,
-            Payload.Snapshot.HistoryEntries.Count);
+            Payload.Snapshot.HistoryEntries.Count,
+            Payload.SyncState is not null);
 
     public void Dispose() => Payload.Dispose();
 }

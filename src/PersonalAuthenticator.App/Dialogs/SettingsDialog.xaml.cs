@@ -280,7 +280,7 @@ public sealed partial class SettingsDialog : ContentDialog
                 password.AsMemory(),
                 CancellationToken.None);
             ShowBackupStatus(
-                $"Recovery-{info.Slot} was encrypted and fully verified.",
+                $"Recovery-{info.Slot} was encrypted and fully verified with sync history.",
                 isError: false);
             await RefreshRecoveryHealthAsync();
         }
@@ -315,7 +315,9 @@ public sealed partial class SettingsDialog : ContentDialog
                 password.AsMemory(),
                 CancellationToken.None);
             ShowBackupStatus(
-                $"Recovery-{info.Slot} passed a complete decrypt and record verification.",
+                info.ContainsSyncHistory
+                    ? $"Recovery-{info.Slot} passed complete record and sync-history verification."
+                    : $"Recovery-{info.Slot} is an older bundle without sync history. It is importable, but restoring it starts a new sync history and requires sync reconfiguration.",
                 isError: false);
             await RefreshRecoveryHealthAsync();
         }
@@ -360,7 +362,9 @@ public sealed partial class SettingsDialog : ContentDialog
                 CancellationToken.None);
             await _viewModel.ReloadVaultAsync(CancellationToken.None);
             ShowBackupStatus(
-                $"Recovery-{info.Slot} was restored into a new verified local vault. The previous vault was retained.",
+                info.ContainsSyncHistory
+                    ? $"Recovery-{info.Slot} restored the verified vault and existing sync history. The previous vault was retained."
+                    : $"Recovery-{info.Slot} restored the verified vault. This older bundle started a new sync history; reconfigure sync before using a shared remote. The previous vault was retained.",
                 isError: false);
             await RefreshRecoveryHealthAsync();
         }

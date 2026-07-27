@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
+using PersonalAuthenticator.Infrastructure.Sync;
 
 namespace PersonalAuthenticator.Infrastructure.Recovery;
 
@@ -31,7 +32,8 @@ internal sealed class RecoveryBundleManager
         string directoryPath,
         ReadOnlyMemory<char> password,
         V2VaultSnapshot snapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SyncRecoveryState? syncState = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -55,7 +57,8 @@ internal sealed class RecoveryBundleManager
                 snapshot,
                 password,
                 createdAtUtc,
-                cancellationToken);
+                cancellationToken,
+                syncState);
             await WriteThroughAsync(temporaryPath, envelope, cancellationToken);
             _checkpoint?.Invoke(RecoveryCheckpoint.AfterSlotWriteBeforeVerification);
 

@@ -8,4 +8,5 @@ public sealed record RecoveryBundleInfo(
     long ChangeSequence,
     int AccountCount,
     int SecretVersionCount,
-    int HistoryEntryCount);
+    int HistoryEntryCount,
+    bool ContainsSyncHistory);

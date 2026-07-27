@@ -731,11 +731,34 @@ public sealed partial class VersionedVaultStore :
         {
             V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
             using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            SyncRecoveryConfiguration? configuration = null;
+            if (_syncConfigStore.Exists)
+            {
+                using LocalFolderSyncConfig localConfiguration =
+                    await _syncConfigStore.LoadAsync(cancellationToken);
+                configuration = new SyncRecoveryConfiguration(
+                    "local-folder",
+                    localConfiguration.RepositoryId,
+                    localConfiguration.GenerationId,
+                    RepositoryId: null,
+                    RepositoryOwner: null,
+                    RepositoryName: null,
+                    Branch: null,
+                    PathPrefix: null,
+                    Enabled: true,
+                    BackgroundSyncEnabled: false);
+            }
+
+            using SyncRecoveryState syncState =
+                await store.ExportSyncRecoveryStateAsync(
+                    configuration,
+                    cancellationToken);
             return await _recoveryBundles.CreateAsync(
                 directoryPath,
                 password,
                 snapshot,
-                cancellationToken);
+                cancellationToken,
+                syncState);
         }
         finally
         {
@@ -806,12 +829,35 @@ public sealed partial class VersionedVaultStore :
             var recoveredStore = new V2SqliteVaultStore(
                 recoveredDatabasePath,
                 recoveredKeyPath);
-            await recoveredStore.SaveRecoveredAsync(
-                bundle.Payload.Snapshot.Accounts,
-                bundle.Payload.Snapshot.SecretVersions,
-                recoveredHistory,
-                bundle.Payload.Snapshot.ChangeSequence,
-                cancellationToken);
+            if (bundle.Payload.SyncState is null)
+            {
+                await recoveredStore.SaveRecoveredAsync(
+                    bundle.Payload.Snapshot.Accounts,
+                    bundle.Payload.Snapshot.SecretVersions,
+                    recoveredHistory,
+                    bundle.Payload.Snapshot.ChangeSequence,
+                    cancellationToken);
+            }
+            else
+            {
+                await recoveredStore.SaveRecoveredAsync(
+                    bundle.Payload.Snapshot.Accounts,
+                    bundle.Payload.Snapshot.SecretVersions,
+                    bundle.Payload.Snapshot.HistoryEntries,
+                    bundle.Payload.Snapshot.ChangeSequence,
+                    cancellationToken);
+                await recoveredStore.ImportSyncRecoveryStateAsync(
+                    bundle.Payload.SyncState,
+                    cancellationToken);
+                await recoveredStore.SetRecoveryChangeSequenceAsync(
+                    bundle.Payload.Snapshot.ChangeSequence,
+                    cancellationToken);
+                await recoveredStore.SaveAsync(
+                    bundle.Payload.Snapshot.Accounts,
+                    bundle.Payload.Snapshot.SecretVersions,
+                    recoveredHistory,
+                    cancellationToken);
+            }
 
             using (V2VaultSnapshot reopened = await recoveredStore.LoadAsync(
                        cancellationToken))

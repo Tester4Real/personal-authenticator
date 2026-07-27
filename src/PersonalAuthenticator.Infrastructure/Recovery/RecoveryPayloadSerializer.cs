@@ -3,6 +3,7 @@ using System.Text;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
 using PersonalAuthenticator.Infrastructure.Storage;
+using PersonalAuthenticator.Infrastructure.Sync;
 
 namespace PersonalAuthenticator.Infrastructure.Recovery;
 
@@ -11,7 +12,7 @@ internal static class RecoveryPayloadSerializer
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
-    private const int PayloadVersion = 1;
+    private const int PayloadVersion = 2;
     private const int MaximumAccounts = 10_000;
     private const int MaximumSecretVersions = 100_000;
     private const int MaximumHistoryEntries = 1_000_000;
@@ -19,7 +20,10 @@ internal static class RecoveryPayloadSerializer
     private const int MaximumSecretBytes = 128;
     private const int MaximumPayloadBytes = 128 * 1024 * 1024;
 
-    public static byte[] Serialize(V2VaultSnapshot snapshot, DateTimeOffset createdAtUtc)
+    public static byte[] Serialize(
+        V2VaultSnapshot snapshot,
+        DateTimeOffset createdAtUtc,
+        SyncRecoveryState? syncState = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         V2SqliteVaultStore.ValidateSnapshot(
@@ -79,6 +83,12 @@ internal static class RecoveryPayloadSerializer
                     WriteNullableGuid(writer, entry.RelatedAccountId);
                     WriteNullableGuid(writer, entry.ActorDeviceId);
                 }
+
+                writer.Write(syncState is not null);
+                if (syncState is not null)
+                {
+                    WriteSyncState(writer, syncState);
+                }
             }
 
             if (stream.Length > MaximumPayloadBytes)
@@ -112,7 +122,8 @@ internal static class RecoveryPayloadSerializer
         {
             using var stream = new MemoryStream(payload, writable: false);
             using var reader = new BinaryReader(stream, StrictUtf8, leaveOpen: false);
-            if (reader.ReadInt32() != PayloadVersion)
+            int payloadVersion = reader.ReadInt32();
+            if (payloadVersion is not (1 or PayloadVersion))
             {
                 throw InvalidBundle("The recovery payload version is not supported.");
             }
@@ -184,14 +195,19 @@ internal static class RecoveryPayloadSerializer
                         ReadNullableGuid(reader)));
             }
 
+            SyncRecoveryState? syncState = payloadVersion >= 2 &&
+                ReadBooleanStrict(reader)
+                    ? ReadSyncState(reader)
+                    : null;
             if (stream.Position != stream.Length)
             {
+                syncState?.Dispose();
                 throw InvalidBundle("The recovery payload contains trailing data.");
             }
 
             V2SqliteVaultStore.ValidateSnapshot(accounts, versions, history);
             var snapshot = new V2VaultSnapshot(accounts, versions, history, changeSequence);
-            return new RecoveryPayload(snapshot, createdAtUtc);
+            return new RecoveryPayload(snapshot, createdAtUtc, syncState);
         }
         catch (SafeApplicationException)
         {
@@ -221,6 +237,179 @@ internal static class RecoveryPayloadSerializer
         }
 
         return count;
+    }
+
+    private static void WriteSyncState(
+        BinaryWriter writer,
+        SyncRecoveryState state)
+    {
+        writer.Write(state.ProtocolVersion);
+        writer.Write(state.RequiredFeatures.Count);
+        foreach (string feature in state.RequiredFeatures.Order(StringComparer.Ordinal))
+        {
+            WriteString(writer, feature);
+        }
+
+        WriteGuid(writer, state.DeviceId);
+        writer.Write(state.DeviceSequenceCoverage.Count);
+        foreach ((Guid deviceId, long sequence) in
+                 state.DeviceSequenceCoverage.OrderBy(item => item.Key))
+        {
+            WriteGuid(writer, deviceId);
+            writer.Write(sequence);
+        }
+
+        writer.Write(state.SerializedOperations.Count);
+        foreach (byte[] operation in state.SerializedOperations)
+        {
+            if (operation.Length is < 64 or >
+                SyncOperationSerializer.MaximumOperationBytes)
+            {
+                throw InvalidBundle("A recovery sync operation has an invalid size.");
+            }
+
+            writer.Write(operation.Length);
+            writer.Write(operation);
+        }
+
+        writer.Write(state.OutboxOperationIds.Count);
+        foreach (Guid operationId in state.OutboxOperationIds.Order())
+        {
+            WriteGuid(writer, operationId);
+        }
+
+        writer.Write(state.UnresolvedConflicts.Count);
+        foreach (SyncConflictRecord conflict in
+                 state.UnresolvedConflicts.OrderBy(item => item.Id))
+        {
+            WriteGuid(writer, conflict.Id);
+            WriteGuid(writer, conflict.AccountId);
+            writer.Write((int)conflict.Kind);
+            WriteString(writer, conflict.FieldKey);
+            WriteGuid(writer, conflict.OperationAId);
+            WriteGuid(writer, conflict.OperationBId);
+            WriteNullableGuid(writer, conflict.SecretVersionAId);
+            WriteNullableGuid(writer, conflict.SecretVersionBId);
+            writer.Write(conflict.DetectedAtUtc.UtcTicks);
+        }
+
+        writer.Write(state.Configuration is not null);
+        if (state.Configuration is { } configuration)
+        {
+            WriteString(writer, configuration.BackendKind);
+            WriteGuid(writer, configuration.VaultId);
+            WriteGuid(writer, configuration.RemoteGeneration);
+            writer.Write(configuration.RepositoryId.HasValue);
+            if (configuration.RepositoryId.HasValue)
+            {
+                writer.Write(configuration.RepositoryId.Value);
+            }
+
+            WriteNullableString(writer, configuration.RepositoryOwner);
+            WriteNullableString(writer, configuration.RepositoryName);
+            WriteNullableString(writer, configuration.Branch);
+            WriteNullableString(writer, configuration.PathPrefix);
+            writer.Write(configuration.Enabled);
+            writer.Write(configuration.BackgroundSyncEnabled);
+        }
+    }
+
+    private static SyncRecoveryState ReadSyncState(BinaryReader reader)
+    {
+        int protocolVersion = reader.ReadInt32();
+        int featureCount = ReadCount(reader, 64, "required-feature");
+        var features = new List<string>(featureCount);
+        for (int index = 0; index < featureCount; index++)
+        {
+            features.Add(ReadString(reader));
+        }
+
+        Guid deviceId = ReadGuid(reader);
+        int coverageCount = ReadCount(reader, 10_000, "device-coverage");
+        var coverage = new Dictionary<Guid, long>(coverageCount);
+        for (int index = 0; index < coverageCount; index++)
+        {
+            Guid id = ReadGuid(reader);
+            long sequence = reader.ReadInt64();
+            if (sequence < 0 || !coverage.TryAdd(id, sequence))
+            {
+                throw InvalidBundle("Recovery device coverage is invalid.");
+            }
+        }
+
+        int operationCount = ReadCount(reader, 1_000_000, "operation");
+        var operations = new List<byte[]>(operationCount);
+        try
+        {
+            for (int index = 0; index < operationCount; index++)
+            {
+                operations.Add(
+                    ReadBytes(
+                        reader,
+                        SyncOperationSerializer.MaximumOperationBytes));
+            }
+
+            int outboxCount = ReadCount(reader, operationCount, "outbox");
+            var outbox = new HashSet<Guid>();
+            for (int index = 0; index < outboxCount; index++)
+            {
+                if (!outbox.Add(ReadGuid(reader)))
+                {
+                    throw InvalidBundle("Recovery outbox entries are duplicated.");
+                }
+            }
+
+            int conflictCount = ReadCount(reader, 100_000, "conflict");
+            var conflicts = new List<SyncConflictRecord>(conflictCount);
+            for (int index = 0; index < conflictCount; index++)
+            {
+                conflicts.Add(
+                    new SyncConflictRecord(
+                        ReadGuid(reader),
+                        ReadGuid(reader),
+                        (SyncConflictKind)reader.ReadInt32(),
+                        ReadString(reader),
+                        ReadGuid(reader),
+                        ReadGuid(reader),
+                        ReadNullableGuid(reader),
+                        ReadNullableGuid(reader),
+                        ReadDateTime(reader),
+                        Resolved: false));
+            }
+
+            SyncRecoveryConfiguration? configuration =
+                ReadBooleanStrict(reader)
+                    ? new SyncRecoveryConfiguration(
+                        ReadString(reader),
+                        ReadGuid(reader),
+                        ReadGuid(reader),
+                        ReadBooleanStrict(reader) ? reader.ReadInt64() : null,
+                        ReadNullableString(reader),
+                        ReadNullableString(reader),
+                        ReadNullableString(reader),
+                        ReadNullableString(reader),
+                        ReadBooleanStrict(reader),
+                        ReadBooleanStrict(reader))
+                    : null;
+            return new SyncRecoveryState(
+                protocolVersion,
+                features,
+                deviceId,
+                coverage,
+                operations,
+                outbox,
+                conflicts,
+                configuration);
+        }
+        catch
+        {
+            foreach (byte[] operation in operations)
+            {
+                CryptographicOperations.ZeroMemory(operation);
+            }
+
+            throw;
+        }
     }
 
     private static void WriteGuid(BinaryWriter writer, Guid value) =>
@@ -268,6 +457,18 @@ internal static class RecoveryPayloadSerializer
             CryptographicOperations.ZeroMemory(bytes);
         }
     }
+
+    private static void WriteNullableString(BinaryWriter writer, string? value)
+    {
+        writer.Write(value is not null);
+        if (value is not null)
+        {
+            WriteString(writer, value);
+        }
+    }
+
+    private static string? ReadNullableString(BinaryReader reader) =>
+        ReadBooleanStrict(reader) ? ReadString(reader) : null;
 
     private static byte[] ReadBytes(BinaryReader reader, int maximumLength)
     {
@@ -352,7 +553,12 @@ internal static class RecoveryPayloadSerializer
 
 internal sealed record RecoveryPayload(
     V2VaultSnapshot Snapshot,
-    DateTimeOffset CreatedAtUtc) : IDisposable
+    DateTimeOffset CreatedAtUtc,
+    SyncRecoveryState? SyncState) : IDisposable
 {
-    public void Dispose() => Snapshot.Dispose();
+    public void Dispose()
+    {
+        Snapshot.Dispose();
+        SyncState?.Dispose();
+    }
 }

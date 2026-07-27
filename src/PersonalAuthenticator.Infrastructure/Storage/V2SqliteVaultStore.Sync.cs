@@ -576,7 +576,7 @@ public sealed partial class V2SqliteVaultStore
 
     private static async Task<HashSet<Guid>> ReadGuidSetAsync(
         SqliteConnection connection,
-        SqliteTransaction transaction,
+        SqliteTransaction? transaction,
         string commandText,
         CancellationToken cancellationToken)
     {
@@ -1062,6 +1062,246 @@ public sealed partial class V2SqliteVaultStore
 
             CryptographicOperations.ZeroMemory(rootKey);
         }
+    }
+
+    internal async Task<SyncRecoveryState> ExportSyncRecoveryStateAsync(
+        SyncRecoveryConfiguration? configuration,
+        CancellationToken cancellationToken)
+    {
+        byte[] rootKey = await _rootKeyProvider.LoadAsync(cancellationToken);
+        List<SyncOperation>? operations = null;
+        var serialized = new List<byte[]>();
+        try
+        {
+            await using SqliteConnection connection =
+                CreateConnection(SqliteOpenMode.ReadWrite);
+            await OpenAndConfigureAsync(connection, writable: true, cancellationToken);
+            await EnsureSchemaAsync(connection, databaseExisted: true, cancellationToken);
+            await VerifySchemaAndIntegrityAsync(connection, cancellationToken);
+            operations = await LoadAllOperationsAsync(
+                connection,
+                rootKey,
+                cancellationToken);
+            foreach (SyncOperation operation in operations)
+            {
+                serialized.Add(SyncOperationSerializer.Serialize(operation));
+            }
+
+            HashSet<Guid> outbox = await ReadGuidSetAsync(
+                connection,
+                transaction: null,
+                "SELECT operation_id FROM sync_outbox ORDER BY operation_id;",
+                cancellationToken);
+            List<SyncConflictRecord> conflicts =
+                (await ReadConflictRecordsAsync(connection, cancellationToken))
+                .Where(item => !item.Resolved)
+                .ToList();
+            Dictionary<Guid, long> coverage = operations
+                .GroupBy(item => item.DeviceId)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Max(item => item.DeviceSequence));
+            Guid deviceId =
+                await _deviceIdentityStore.LoadOrCreateAsync(cancellationToken);
+            return new SyncRecoveryState(
+                ProtocolVersion: 1,
+                RequiredFeatures:
+                [
+                    "immutable-operations-v1",
+                    "causal-parents-v1",
+                    "conflicts-v1",
+                ],
+                deviceId,
+                coverage,
+                serialized,
+                outbox,
+                conflicts,
+                configuration);
+        }
+        catch
+        {
+            foreach (byte[] operation in serialized)
+            {
+                CryptographicOperations.ZeroMemory(operation);
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (operations is not null)
+            {
+                foreach (SyncOperation operation in operations)
+                {
+                    operation.Dispose();
+                }
+            }
+
+            CryptographicOperations.ZeroMemory(rootKey);
+        }
+    }
+
+    internal async Task SetRecoveryChangeSequenceAsync(
+        long changeSequence,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(changeSequence);
+        await using SqliteConnection connection =
+            CreateConnection(SqliteOpenMode.ReadWrite);
+        await OpenAndConfigureAsync(connection, writable: true, cancellationToken);
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync(
+                cancellationToken);
+        try
+        {
+            await WriteChangeSequenceAsync(
+                connection,
+                transaction,
+                changeSequence,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    internal async Task ImportSyncRecoveryStateAsync(
+        SyncRecoveryState state,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.ProtocolVersion != 1 ||
+            state.RequiredFeatures.Any(feature =>
+                feature is not (
+                    "immutable-operations-v1" or
+                    "causal-parents-v1" or
+                    "conflicts-v1")))
+        {
+            throw new SafeApplicationException(
+                "Recovery.UnsupportedSyncProtocol",
+                "The recovery bundle requires a newer sync protocol.");
+        }
+
+        byte[] rootKey = await _rootKeyProvider.LoadAsync(cancellationToken);
+        var operations = new List<SyncOperation>(state.SerializedOperations.Count);
+        try
+        {
+            foreach (byte[] serialized in state.SerializedOperations)
+            {
+                operations.Add(SyncOperationSerializer.Deserialize(serialized));
+            }
+
+            if (operations.Select(item => item.Id).Distinct().Count() !=
+                    operations.Count ||
+                operations.GroupBy(item => (item.DeviceId, item.DeviceSequence))
+                    .Any(group => group.Count() != 1) ||
+                state.OutboxOperationIds.Any(id =>
+                    operations.All(operation => operation.Id != id)))
+            {
+                throw new SafeApplicationException(
+                    "Recovery.InvalidSyncState",
+                    "The recovery sync history is inconsistent.");
+            }
+
+            await using SqliteConnection connection =
+                CreateConnection(SqliteOpenMode.ReadWrite);
+            await OpenAndConfigureAsync(connection, writable: true, cancellationToken);
+            await EnsureSchemaAsync(connection, databaseExisted: true, cancellationToken);
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    cancellationToken);
+            try
+            {
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    """
+                    DROP TRIGGER IF EXISTS sync_operations_no_update;
+                    DROP TRIGGER IF EXISTS sync_operations_no_delete;
+                    DELETE FROM sync_outbox;
+                    DELETE FROM sync_applied_operations;
+                    DELETE FROM sync_frontier;
+                    DELETE FROM sync_field_heads;
+                    DELETE FROM sync_conflicts;
+                    DELETE FROM sync_account_aliases;
+                    DELETE FROM sync_secret_aliases;
+                    DELETE FROM sync_operation_parents;
+                    DELETE FROM sync_operations;
+                    """,
+                    cancellationToken);
+                foreach (SyncOperation operation in operations)
+                {
+                    await InsertOperationAsync(
+                        connection,
+                        transaction,
+                        rootKey,
+                        operation,
+                        enqueue: state.OutboxOperationIds.Contains(operation.Id),
+                        applied: false,
+                        cancellationToken);
+                }
+
+                Guid localDeviceId =
+                    await _deviceIdentityStore.LoadOrCreateAsync(cancellationToken);
+                long nextSequence = checked(
+                    operations
+                        .Where(item => item.DeviceId == localDeviceId)
+                        .Select(item => item.DeviceSequence)
+                        .DefaultIfEmpty(0)
+                        .Max() + 1);
+                long logicalClock = operations
+                    .Select(item => item.LogicalClock)
+                    .DefaultIfEmpty(0)
+                    .Max();
+                await WriteSyncStateAsync(
+                    connection,
+                    transaction,
+                    localDeviceId,
+                    nextSequence,
+                    logicalClock,
+                    cancellationToken);
+                await RebuildGlobalFrontierAsync(
+                    connection,
+                    transaction,
+                    cancellationToken);
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    """
+                    CREATE TRIGGER sync_operations_no_update
+                    BEFORE UPDATE ON sync_operations
+                    BEGIN
+                        SELECT RAISE(ABORT, 'sync operations are immutable');
+                    END;
+                    CREATE TRIGGER sync_operations_no_delete
+                    BEFORE DELETE ON sync_operations
+                    BEGIN
+                        SELECT RAISE(ABORT, 'sync operations are immutable');
+                    END;
+                    """,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
+        finally
+        {
+            foreach (SyncOperation operation in operations)
+            {
+                operation.Dispose();
+            }
+
+            CryptographicOperations.ZeroMemory(rootKey);
+        }
+
+        await ApplyRemoteOperationsAsync([], cancellationToken);
     }
 
     private static async Task<List<SyncOperation>> LoadAllOperationsAsync(
