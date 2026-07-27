@@ -47,6 +47,66 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SensitiveSetup_RequiresFreshVerificationAndUsesShortClipboardTimeout()
+    {
+        TestHarness harness = await TestHarness.CreateAsync();
+        using (harness)
+        {
+            TotpAccount account = CreateAccount("Example", "user", 9);
+            await harness.ViewModel.AddAsync(
+                account,
+                DuplicateResolution.Cancel,
+                CancellationToken.None);
+            harness.V2Features.SetupInfo = new SensitiveSetupInfo(
+                account.Id,
+                account.Issuer,
+                account.AccountName,
+                "otpauth://totp/Example:user?secret=JBSWY3DPEHPK3PXP&issuer=Example");
+            harness.Verification.NextResult = false;
+
+            SensitiveSetupInfo? denied =
+                await harness.ViewModel.GetSensitiveSetupInfoAsync(
+                    account.Id,
+                    CancellationToken.None);
+
+            Assert.Null(denied);
+            Assert.Equal(0, harness.V2Features.SetupInfoRequests);
+
+            harness.Verification.NextResult = true;
+            SensitiveSetupInfo? revealed =
+                await harness.ViewModel.GetSensitiveSetupInfoAsync(
+                    account.Id,
+                    CancellationToken.None);
+            Assert.Same(harness.V2Features.SetupInfo, revealed);
+            Assert.Equal(1, harness.V2Features.SetupInfoRequests);
+
+            await harness.ViewModel.CopySensitiveSetupUriAsync(
+                revealed!,
+                CancellationToken.None);
+            Assert.Equal(revealed!.ProvisioningUri, harness.Clipboard.LastSensitiveText);
+            Assert.Equal(TimeSpan.FromSeconds(15), harness.Clipboard.LastSensitiveClearAfter);
+        }
+    }
+
+    [Fact]
+    public async Task FirstSave_ReevaluatesV2FeatureAvailability()
+    {
+        TestHarness harness = await TestHarness.CreateAsync();
+        using (harness)
+        {
+            Assert.False(harness.ViewModel.CanUseV2Features);
+            harness.V2Features.Available = true;
+
+            await harness.ViewModel.AddAsync(
+                CreateAccount("Example", "user", 10),
+                DuplicateResolution.Cancel,
+                CancellationToken.None);
+
+            Assert.True(harness.ViewModel.CanUseV2Features);
+        }
+    }
+
+    [Fact]
     public async Task AddEditDeleteAndTimerRefresh_UpdateViewState()
     {
         TestHarness harness = await TestHarness.CreateAsync();
@@ -142,13 +202,17 @@ public sealed class MainViewModelTests
             MainViewModel viewModel,
             MutableClock clock,
             FakeClipboard clipboard,
-            FakeSettingsStore settingsStore)
+            FakeSettingsStore settingsStore,
+            FakeVerification verification,
+            FakeV2Features v2Features)
         {
             _vault = vault;
             ViewModel = viewModel;
             Clock = clock;
             Clipboard = clipboard;
             SettingsStore = settingsStore;
+            Verification = verification;
+            V2Features = v2Features;
         }
 
         public MainViewModel ViewModel { get; }
@@ -159,22 +223,36 @@ public sealed class MainViewModelTests
 
         public FakeSettingsStore SettingsStore { get; }
 
+        public FakeVerification Verification { get; }
+
+        public FakeV2Features V2Features { get; }
+
         public static async Task<TestHarness> CreateAsync()
         {
             var clock = new MutableClock { UtcNow = DateTimeOffset.FromUnixTimeSeconds(0) };
             var vault = new VaultService(new InMemoryStore(), clock, new DuplicateDetector());
             var clipboard = new FakeClipboard();
             var settingsStore = new FakeSettingsStore();
+            var verification = new FakeVerification();
+            var v2Features = new FakeV2Features();
             var viewModel = new MainViewModel(
                 vault,
                 new FakeTotpGenerator(),
                 clock,
                 clipboard,
-                new FakeVerification(),
+                verification,
                 settingsStore,
-                new FakeMigrationCoordinator());
+                new FakeMigrationCoordinator(),
+                v2Features);
             await viewModel.InitialiseAsync(CancellationToken.None);
-            return new TestHarness(vault, viewModel, clock, clipboard, settingsStore);
+            return new TestHarness(
+                vault,
+                viewModel,
+                clock,
+                clipboard,
+                settingsStore,
+                verification,
+                v2Features);
         }
 
         public void Dispose() => _vault.Dispose();
@@ -203,9 +281,23 @@ public sealed class MainViewModelTests
     {
         public string? LastCode { get; private set; }
 
+        public string? LastSensitiveText { get; private set; }
+
+        public TimeSpan? LastSensitiveClearAfter { get; private set; }
+
         public Task CopyCodeAsync(string code, TimeSpan clearAfter, CancellationToken cancellationToken)
         {
             LastCode = code;
+            return Task.CompletedTask;
+        }
+
+        public Task CopySensitiveTextAsync(
+            string text,
+            TimeSpan clearAfter,
+            CancellationToken cancellationToken)
+        {
+            LastSensitiveText = text;
+            LastSensitiveClearAfter = clearAfter;
             return Task.CompletedTask;
         }
 
@@ -214,13 +306,79 @@ public sealed class MainViewModelTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
+    private sealed class FakeV2Features : IV2VaultFeatures
+    {
+        public bool Available { get; set; }
+
+        public SensitiveSetupInfo? SetupInfo { get; set; }
+
+        public int SetupInfoRequests { get; private set; }
+
+        public Task<bool> IsAvailableAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(Available);
+
+        public Task AddSecretCandidateAsync(
+            Guid accountId,
+            TotpAccount candidate,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task AddDuplicateAccountAsync(
+            Guid relatedAccountId,
+            TotpAccount account,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ActivateSecretCandidateAsync(
+            Guid accountId,
+            Guid secretVersionId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<SecretVersionSummary>> GetSecretVersionsAsync(
+            Guid accountId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<SecretVersionSummary>>([]);
+
+        public Task<IReadOnlyList<ArchivedAccountSummary>> GetArchivedAccountsAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ArchivedAccountSummary>>([]);
+
+        public Task RestoreArchivedAccountAsync(
+            Guid accountId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<AccountHistoryEntryV2>> GetAccountHistoryAsync(
+            Guid accountId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<AccountHistoryEntryV2>>([]);
+
+        public Task<SensitiveSetupInfo> GetActiveSetupInfoAsync(
+            Guid accountId,
+            CancellationToken cancellationToken)
+        {
+            SetupInfoRequests++;
+            return Task.FromResult(
+                SetupInfo ??
+                throw new InvalidOperationException("No setup information was configured."));
+        }
+    }
+
     private sealed class FakeVerification : IUserVerificationService
     {
+        public bool NextResult { get; set; } = true;
+
+        public int RequestCount { get; private set; }
+
         public Task<UserVerificationAvailability> GetAvailabilityAsync() =>
             Task.FromResult(UserVerificationAvailability.Available);
 
-        public Task<bool> RequestAsync(string message, CancellationToken cancellationToken) =>
-            Task.FromResult(true);
+        public Task<bool> RequestAsync(string message, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return Task.FromResult(NextResult);
+        }
     }
 
     private sealed class FakeSettingsStore : IAppSettingsStore

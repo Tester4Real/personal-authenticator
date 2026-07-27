@@ -37,7 +37,38 @@ public sealed class SecureClipboardService : ISecureClipboardService
         }
 
         ArgumentOutOfRangeException.ThrowIfLessThan(clearAfter, TimeSpan.Zero);
+        await CopyOwnedTextAsync(code, clearAfter, cancellationToken);
+    }
 
+    public async Task CopySensitiveTextAsync(
+        string text,
+        TimeSpan clearAfter,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed), this);
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        if (text.Length > 4096)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(text),
+                "Sensitive clipboard text cannot exceed 4096 characters.");
+        }
+
+        if (clearAfter < TimeSpan.Zero || clearAfter > TimeSpan.FromMinutes(1))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(clearAfter),
+                "Sensitive clipboard text must be cleared within one minute.");
+        }
+
+        await CopyOwnedTextAsync(text, clearAfter, cancellationToken);
+    }
+
+    private async Task CopyOwnedTextAsync(
+        string text,
+        TimeSpan clearAfter,
+        CancellationToken cancellationToken)
+    {
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -48,15 +79,18 @@ public sealed class SecureClipboardService : ISecureClipboardService
 
             try
             {
-                _clipboard.SetOwnedCode(code, ownershipMarker);
+                _clipboard.SetOwnedText(text, ownershipMarker);
             }
             catch (Exception exception)
             {
                 InfrastructureLog.ClipboardWriteFailed(_logger, exception.GetType().Name);
-                throw new SafeApplicationException("Clipboard.WriteFailed", "The code could not be copied.", exception);
+                throw new SafeApplicationException(
+                    "Clipboard.WriteFailed",
+                    "The sensitive content could not be copied.",
+                    exception);
             }
 
-            var pendingClear = new PendingClear(code, ownershipMarker);
+            var pendingClear = new PendingClear(text, ownershipMarker);
             Interlocked.Exchange(ref _pendingClear, pendingClear);
             pendingClear.Task = ClearConditionallyAfterDelayAsync(pendingClear, clearAfter);
         }
@@ -120,7 +154,7 @@ public sealed class SecureClipboardService : ISecureClipboardService
         try
         {
             await Task.Delay(delay, pendingClear.Cancellation.Token);
-            await ClearIfOwnedAsync(pendingClear.Code, pendingClear.OwnershipMarker);
+            await ClearIfOwnedAsync(pendingClear.Text, pendingClear.OwnershipMarker);
         }
         catch (OperationCanceledException) when (pendingClear.Cancellation.IsCancellationRequested)
         {
@@ -162,17 +196,17 @@ public sealed class SecureClipboardService : ISecureClipboardService
 
         if (clearOwnedClipboard)
         {
-            await ClearIfOwnedAsync(pendingClear.Code, pendingClear.OwnershipMarker);
+            await ClearIfOwnedAsync(pendingClear.Text, pendingClear.OwnershipMarker);
         }
     }
 
-    private async Task ClearIfOwnedAsync(string expectedCode, string expectedOwnershipMarker)
+    private async Task ClearIfOwnedAsync(string expectedText, string expectedOwnershipMarker)
     {
         try
         {
             OwnedClipboardContent? current = await _clipboard.ReadOwnedContentAsync();
             if (current is null ||
-                !string.Equals(current.Code, expectedCode, StringComparison.Ordinal) ||
+                !string.Equals(current.Text, expectedText, StringComparison.Ordinal) ||
                 !string.Equals(current.OwnershipMarker, expectedOwnershipMarker, StringComparison.Ordinal))
             {
                 return;
@@ -188,12 +222,12 @@ public sealed class SecureClipboardService : ISecureClipboardService
     }
 
     private sealed class PendingClear(
-        string code,
+        string text,
         string ownershipMarker) : IDisposable
     {
         private int _disposed;
 
-        public string Code { get; } = code;
+        public string Text { get; } = text;
 
         public string OwnershipMarker { get; } = ownershipMarker;
 

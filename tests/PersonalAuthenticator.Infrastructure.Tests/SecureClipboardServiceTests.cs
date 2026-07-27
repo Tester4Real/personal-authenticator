@@ -109,6 +109,42 @@ public sealed class SecureClipboardServiceTests
     }
 
     [Fact]
+    public async Task SensitiveText_IsConditionallyClearedLikeACode()
+    {
+        var clipboard = new FakeClipboardAdapter();
+        await using var service = new SecureClipboardService(
+            NullLogger<SecureClipboardService>.Instance,
+            clipboard);
+        const string setupUri =
+            "otpauth://totp/Example:user?secret=JBSWY3DPEHPK3PXP&issuer=Example";
+
+        await service.CopySensitiveTextAsync(
+            setupUri,
+            TimeSpan.Zero,
+            TestContext.Current.CancellationToken);
+        await clipboard.Cleared.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(clipboard.Content);
+        Assert.Equal(1, clipboard.ClearCount);
+    }
+
+    [Fact]
+    public async Task SensitiveText_RejectsClipboardTimeoutLongerThanOneMinute()
+    {
+        var clipboard = new FakeClipboardAdapter();
+        await using var service = new SecureClipboardService(
+            NullLogger<SecureClipboardService>.Instance,
+            clipboard);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => service.CopySensitiveTextAsync(
+                "otpauth://totp/Example:user?secret=JBSWY3DPEHPK3PXP",
+                TimeSpan.FromSeconds(61),
+                TestContext.Current.CancellationToken));
+        Assert.Null(clipboard.Content);
+    }
+
+    [Fact]
     public async Task DisposeAsync_ClearsOwnedCodeAndRejectsLaterCopies()
     {
         var clipboard = new FakeClipboardAdapter();
@@ -142,8 +178,8 @@ public sealed class SecureClipboardServiceTests
         public TaskCompletionSource Cleared { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public void SetOwnedCode(string code, string ownershipMarker) =>
-            Content = new OwnedClipboardContent(code, ownershipMarker);
+        public void SetOwnedText(string text, string ownershipMarker) =>
+            Content = new OwnedClipboardContent(text, ownershipMarker);
 
         public Task<OwnedClipboardContent?> ReadOwnedContentAsync()
         {

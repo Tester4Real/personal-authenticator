@@ -5,23 +5,23 @@ namespace PersonalAuthenticator.Infrastructure.Clipboard;
 
 internal interface IClipboardAdapter
 {
-    void SetOwnedCode(string code, string ownershipMarker);
+    void SetOwnedText(string text, string ownershipMarker);
 
     Task<OwnedClipboardContent?> ReadOwnedContentAsync();
 
     void Clear();
 }
 
-internal sealed record OwnedClipboardContent(string Code, string OwnershipMarker);
+internal sealed record OwnedClipboardContent(string Text, string OwnershipMarker);
 
 internal sealed class WindowsClipboardAdapter : IClipboardAdapter
 {
     private const string OwnershipFormat = "application/x-personal-authenticator-owner";
 
-    public void SetOwnedCode(string code, string ownershipMarker)
+    public void SetOwnedText(string text, string ownershipMarker)
     {
         var package = new DataPackage();
-        package.SetText(code);
+        package.SetText(text);
         package.SetData(OwnershipFormat, ownershipMarker);
         var options = new ClipboardContentOptions
         {
@@ -41,10 +41,10 @@ internal sealed class WindowsClipboardAdapter : IClipboardAdapter
             return null;
         }
 
-        string code = await content.GetTextAsync();
+        string text = await content.GetTextAsync();
         object markerValue = await content.GetDataAsync(OwnershipFormat);
         return markerValue is string ownershipMarker
-            ? new OwnedClipboardContent(code, ownershipMarker)
+            ? new OwnedClipboardContent(text, ownershipMarker)
             : null;
     }
 

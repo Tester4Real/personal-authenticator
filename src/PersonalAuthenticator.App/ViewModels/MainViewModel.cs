@@ -16,10 +16,12 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IUserVerificationService _verification;
     private readonly IAppSettingsStore _settingsStore;
     private readonly IVaultMigrationCoordinator _migrationCoordinator;
+    private readonly IV2VaultFeatures _v2Features;
     private readonly Stopwatch _monotonicClock = Stopwatch.StartNew();
     private DateTimeOffset _lastWallClock;
     private TimeSpan _lastMonotonic;
     private bool _clockWarningShown;
+    private bool _canUseV2Features;
 
     public MainViewModel(
         IVaultService vault,
@@ -28,7 +30,8 @@ public sealed partial class MainViewModel : ObservableObject
         ISecureClipboardService clipboard,
         IUserVerificationService verification,
         IAppSettingsStore settingsStore,
-        IVaultMigrationCoordinator migrationCoordinator)
+        IVaultMigrationCoordinator migrationCoordinator,
+        IV2VaultFeatures v2Features)
     {
         _vault = vault;
         _generator = generator;
@@ -37,6 +40,7 @@ public sealed partial class MainViewModel : ObservableObject
         _verification = verification;
         _settingsStore = settingsStore;
         _migrationCoordinator = migrationCoordinator;
+        _v2Features = v2Features;
         _vault.AccountsChanged += OnVaultAccountsChanged;
         _vault.StateChanged += OnVaultStateChanged;
     }
@@ -55,6 +59,8 @@ public sealed partial class MainViewModel : ObservableObject
         MigrationStatus is
             VaultMigrationStatus.ChoiceRequired or
             VaultMigrationStatus.UsingLegacyV1;
+
+    public bool CanUseV2Features => _canUseV2Features;
 
     public bool IsUnlocked => _vault.State == VaultState.Unlocked;
 
@@ -184,6 +190,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             await _vault.AddAsync(account, resolution, cancellationToken);
+            await RefreshMigrationStatusAsync(cancellationToken);
             Notify("Account added", $"{account.Issuer} — {account.AccountName}");
         }
         catch
@@ -198,6 +205,9 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public Guid? FindDuplicate(TotpAccount account) => _vault.FindLikelyDuplicate(account);
+
+    public DuplicateAccountMatch? FindDuplicateMatch(TotpAccount account) =>
+        _vault.FindDuplicate(account);
 
     public AccountCardViewModel? FindCard(Guid id) =>
         VisibleAccounts.FirstOrDefault(account => account.Id == id);
@@ -238,7 +248,148 @@ public sealed partial class MainViewModel : ObservableObject
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
     {
         await _vault.DeleteAsync(id, cancellationToken);
-        Notify("Account deleted", "The encrypted vault was updated.");
+        Notify(
+            CanUseV2Features ? "Account archived" : "Account deleted",
+            CanUseV2Features
+                ? "The account and its encrypted secret history can be restored."
+                : "The legacy encrypted vault was updated.");
+    }
+
+    public async Task AddSecretCandidateAsync(
+        Guid accountId,
+        TotpAccount candidate,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        try
+        {
+            await _v2Features.AddSecretCandidateAsync(
+                accountId,
+                candidate,
+                cancellationToken);
+            Notify(
+                "Candidate secret saved",
+                "The current secret remains active until you explicitly activate the candidate.");
+        }
+        finally
+        {
+            candidate.Dispose();
+        }
+    }
+
+    public async Task AddDuplicateAccountAsync(
+        Guid relatedAccountId,
+        TotpAccount account,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        try
+        {
+            await _v2Features.AddDuplicateAccountAsync(
+                relatedAccountId,
+                account,
+                cancellationToken);
+            await _vault.ReloadAsync(cancellationToken);
+            Notify(
+                "Separate account added",
+                "Both accounts record the duplicate decision in encrypted account history.");
+        }
+        finally
+        {
+            account.Dispose();
+        }
+    }
+
+    public async Task<bool> ActivateSecretCandidateAsync(
+        Guid accountId,
+        Guid secretVersionId,
+        CancellationToken cancellationToken)
+    {
+        if (!await _verification.RequestAsync(
+                "Verify your identity to activate this candidate secret",
+                cancellationToken))
+        {
+            return false;
+        }
+
+        await _v2Features.ActivateSecretCandidateAsync(
+            accountId,
+            secretVersionId,
+            cancellationToken);
+        await _vault.ReloadAsync(cancellationToken);
+        Notify(
+            "Secret activated",
+            "The previous active secret was retained as an encrypted retired version.");
+        return true;
+    }
+
+    public Task<IReadOnlyList<SecretVersionSummary>> GetSecretVersionsAsync(
+        Guid accountId,
+        CancellationToken cancellationToken) =>
+        _v2Features.GetSecretVersionsAsync(accountId, cancellationToken);
+
+    public Task<IReadOnlyList<ArchivedAccountSummary>> GetArchivedAccountsAsync(
+        CancellationToken cancellationToken) =>
+        _v2Features.GetArchivedAccountsAsync(cancellationToken);
+
+    public async Task RestoreArchivedAccountAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await _v2Features.RestoreArchivedAccountAsync(accountId, cancellationToken);
+        if (IsUnlocked)
+        {
+            await _vault.ReloadAsync(cancellationToken);
+        }
+
+        Notify("Account restored", "The archived account is active again.");
+    }
+
+    public Task<IReadOnlyList<AccountHistoryEntryV2>> GetAccountHistoryAsync(
+        Guid accountId,
+        CancellationToken cancellationToken) =>
+        _v2Features.GetAccountHistoryAsync(accountId, cancellationToken);
+
+    public async Task<SensitiveSetupInfo?> GetSensitiveSetupInfoAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsUnlocked)
+        {
+            throw new SafeApplicationException(
+                "Vault.Locked",
+                "Unlock the vault before revealing setup information.");
+        }
+
+        if (!await _verification.RequestAsync(
+                "Verify your identity to reveal the setup URI and QR code",
+                cancellationToken))
+        {
+            return null;
+        }
+
+        return await _v2Features.GetActiveSetupInfoAsync(accountId, cancellationToken);
+    }
+
+    public async Task CopySensitiveSetupUriAsync(
+        SensitiveSetupInfo setupInfo,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(setupInfo);
+        if (!IsUnlocked)
+        {
+            throw new SafeApplicationException(
+                "Vault.Locked",
+                "Unlock the vault before copying setup information.");
+        }
+
+        await _clipboard.CopySensitiveTextAsync(
+            setupInfo.ProvisioningUri,
+            TimeSpan.FromSeconds(15),
+            cancellationToken);
+        Notify(
+            "Setup URI copied",
+            "The clipboard will be cleared in 15 seconds if it is unchanged.");
     }
 
     public async Task RevealAsync(Guid id, CancellationToken cancellationToken)
@@ -293,6 +444,7 @@ public sealed partial class MainViewModel : ObservableObject
         CancellationToken cancellationToken)
     {
         await _vault.ImportAsync(accounts, mode, cancellationToken);
+        await RefreshMigrationStatusAsync(cancellationToken);
         Notify("Backup restored", "Imported accounts were saved to the encrypted Windows vault.");
     }
 
@@ -343,9 +495,13 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task RefreshMigrationStatusAsync(CancellationToken cancellationToken)
     {
         MigrationStatus = await _migrationCoordinator.GetStatusAsync(cancellationToken);
+        _canUseV2Features =
+            MigrationStatus == VaultMigrationStatus.UsingLocalV2 ||
+            await _v2Features.IsAvailableAsync(cancellationToken);
         OnPropertyChanged(nameof(MigrationStatus));
         OnPropertyChanged(nameof(IsMigrationChoiceRequired));
         OnPropertyChanged(nameof(CanUpgradeVault));
+        OnPropertyChanged(nameof(CanUseV2Features));
     }
 
     private void OnVaultAccountsChanged(object? sender, EventArgs args) => RebuildVisibleAccounts();

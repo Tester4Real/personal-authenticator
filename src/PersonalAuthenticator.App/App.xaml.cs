@@ -60,9 +60,12 @@ public partial class App : Application
             provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IVaultMigrationCoordinator>(
             provider => provider.GetRequiredService<VersionedVaultStore>());
+        services.AddSingleton<IV2VaultFeatures>(
+            provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IVaultService, VaultService>();
         services.AddSingleton<IBackupService, PasswordBackupService>();
         services.AddSingleton<IQrCodeDecoder, LocalQrCodeDecoder>();
+        services.AddSingleton<IQrCodeGenerator, LocalQrCodeGenerator>();
         services.AddSingleton<ISecureClipboardService, SecureClipboardService>();
         services.AddSingleton<IUserVerificationService, WindowsUserVerificationService>();
         services.AddSingleton<IAutomaticLockMonitor, WindowsSessionLockMonitor>();
