@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using PersonalAuthenticator.Core.Abstractions;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
+using PersonalAuthenticator.Infrastructure.GitHub;
 using PersonalAuthenticator.Infrastructure.Otp;
 using PersonalAuthenticator.Infrastructure.Recovery;
 using PersonalAuthenticator.Infrastructure.Sync;
@@ -14,6 +15,7 @@ public sealed partial class VersionedVaultStore :
     IV2VaultFeatures,
     IRecoveryService,
     ILocalFolderSyncService,
+    IGitHubSyncService,
     IDisposable
 {
     private readonly string _baseDirectory;
@@ -25,6 +27,11 @@ public sealed partial class VersionedVaultStore :
     private readonly Action<RecoveryCheckpoint>? _recoveryCheckpoint;
     private readonly LocalFolderSyncConfigStore _syncConfigStore;
     private readonly LocalFolderSyncObjectStore _syncObjectStore;
+    private readonly GitHubSyncConfigStore _githubConfigStore;
+    private readonly GitHubCredentialStore _githubCredentialStore;
+    private readonly IGitHubApiClientFactory _githubClientFactory;
+    private Timer? _githubBackgroundTimer;
+    private Timer? _githubDebounceTimer;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
@@ -40,7 +47,8 @@ public sealed partial class VersionedVaultStore :
         string? baseDirectory,
         RecoveryBundleCodec? recoveryCodec,
         Action<RecoveryCheckpoint>? recoveryCheckpoint,
-        Action<LocalSyncCheckpoint>? syncCheckpoint = null)
+        Action<LocalSyncCheckpoint>? syncCheckpoint = null,
+        IGitHubApiClientFactory? githubClientFactory = null)
     {
         ArgumentNullException.ThrowIfNull(legacyLogger);
         _legacyLogger = legacyLogger;
@@ -61,6 +69,13 @@ public sealed partial class VersionedVaultStore :
         _syncConfigStore = new LocalFolderSyncConfigStore(
             Path.Combine(_baseDirectory, "local-folder-sync.dat"));
         _syncObjectStore = new LocalFolderSyncObjectStore(syncCheckpoint);
+        _githubConfigStore = new GitHubSyncConfigStore(
+            Path.Combine(_baseDirectory, "github-sync.dat"));
+        _githubCredentialStore = new GitHubCredentialStore(
+            Path.Combine(_baseDirectory, "github-token.dat"));
+        _githubClientFactory =
+            githubClientFactory ?? new HttpGitHubApiClientFactory();
+        ConfigureGitHubTimer(enabled: true);
     }
 
     public string VaultPath => _pointerStore.PointerPath;
@@ -134,6 +149,11 @@ public sealed partial class VersionedVaultStore :
             {
                 ActiveVaultPointer pointer = await _pointerStore.LoadAsync(cancellationToken);
                 await CreateSelectedStore(pointer).SaveAsync(accounts, cancellationToken);
+                if (pointer.Mode == ActiveVaultMode.LocalV2)
+                {
+                    ScheduleGitHubSyncAfterLocalChange();
+                }
+
                 return;
             }
 
@@ -383,6 +403,7 @@ public sealed partial class VersionedVaultStore :
                     versions,
                     history,
                     cancellationToken);
+                ScheduleGitHubSyncAfterLocalChange();
             }
             finally
             {
@@ -458,6 +479,7 @@ public sealed partial class VersionedVaultStore :
                         relatedAccountId: account.Id))
                 .ToList();
             await store.SaveAsync(accounts, versions, history, cancellationToken);
+            ScheduleGitHubSyncAfterLocalChange();
         }
         finally
         {
@@ -547,6 +569,7 @@ public sealed partial class VersionedVaultStore :
                         account.ActiveSecretVersionId))
                 .ToList();
             await store.SaveAsync(accounts, versions, history, cancellationToken);
+            ScheduleGitHubSyncAfterLocalChange();
         }
         finally
         {
@@ -653,6 +676,7 @@ public sealed partial class VersionedVaultStore :
                 snapshot.SecretVersions,
                 history,
                 cancellationToken);
+            ScheduleGitHubSyncAfterLocalChange();
         }
         finally
         {
@@ -732,7 +756,23 @@ public sealed partial class VersionedVaultStore :
             V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
             using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
             SyncRecoveryConfiguration? configuration = null;
-            if (_syncConfigStore.Exists)
+            if (_githubConfigStore.Exists)
+            {
+                using GitHubSyncConfiguration githubConfiguration =
+                    await _githubConfigStore.LoadAsync(cancellationToken);
+                configuration = new SyncRecoveryConfiguration(
+                    "github",
+                    githubConfiguration.VaultId,
+                    githubConfiguration.RemoteGeneration,
+                    githubConfiguration.RepositoryId,
+                    githubConfiguration.Owner,
+                    githubConfiguration.Repository,
+                    githubConfiguration.Branch,
+                    githubConfiguration.PathPrefix,
+                    githubConfiguration.Enabled,
+                    githubConfiguration.BackgroundSyncEnabled);
+            }
+            else if (_syncConfigStore.Exists)
             {
                 using LocalFolderSyncConfig localConfiguration =
                     await _syncConfigStore.LoadAsync(cancellationToken);
@@ -921,6 +961,8 @@ public sealed partial class VersionedVaultStore :
         }
 
         _disposed = true;
+        _githubBackgroundTimer?.Dispose();
+        _githubDebounceTimer?.Dispose();
         _gate.Dispose();
     }
 
@@ -947,6 +989,7 @@ public sealed partial class VersionedVaultStore :
         }
 
         await _pointerStore.SaveAsync(pointer, cancellationToken);
+        ScheduleGitHubSyncAfterLocalChange();
     }
 
     private IVaultStore CreateSelectedStore(ActiveVaultPointer pointer)
