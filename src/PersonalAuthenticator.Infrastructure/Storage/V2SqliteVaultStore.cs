@@ -7,13 +7,14 @@ using PersonalAuthenticator.Core.Abstractions;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
 using PersonalAuthenticator.Infrastructure.Serialization;
+using PersonalAuthenticator.Infrastructure.Sync;
 
 namespace PersonalAuthenticator.Infrastructure.Storage;
 
-public sealed class V2SqliteVaultStore : IV2VaultStore
+public sealed partial class V2SqliteVaultStore : IV2VaultStore
 {
     private const int ApplicationId = 0x50415632;
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
     private const int MaximumAccounts = 10_000;
     private const int MaximumSecretVersions = 100_000;
     private const int MaximumHistoryEntries = 1_000_000;
@@ -22,6 +23,7 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
     private const int MaximumHistoryPayloadBytes = 8 * 1024;
     private const long MaximumDatabaseBytes = 256L * 1024 * 1024;
     private readonly IVaultRootKeyProvider _rootKeyProvider;
+    private readonly DpapiDeviceIdentityStore _deviceIdentityStore;
 
     public V2SqliteVaultStore(string databasePath, string? keyPath = null)
         : this(
@@ -45,6 +47,13 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         ArgumentNullException.ThrowIfNull(rootKeyProvider);
         DatabasePath = Path.GetFullPath(databasePath);
         _rootKeyProvider = rootKeyProvider;
+        _deviceIdentityStore = new DpapiDeviceIdentityStore(
+            Path.Combine(
+                Path.GetDirectoryName(DatabasePath) ??
+                    throw new ArgumentException(
+                        "The database path must include a directory.",
+                        nameof(databasePath)),
+                "sync-device-id.dat"));
     }
 
     public string DatabasePath { get; }
@@ -174,6 +183,8 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         ValidateDatabaseSize();
 
         byte[] rootKey = await _rootKeyProvider.LoadOrCreateAsync(cancellationToken);
+        V2VaultSnapshot? previousSnapshot = null;
+        var syncDrafts = new List<SyncOperationDraft>();
         try
         {
             bool databaseExisted = File.Exists(DatabasePath) &&
@@ -181,6 +192,35 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
             await using SqliteConnection connection = CreateConnection(SqliteOpenMode.ReadWriteCreate);
             await OpenAndConfigureAsync(connection, writable: true, cancellationToken);
             await EnsureSchemaAsync(connection, databaseExisted, cancellationToken);
+            previousSnapshot = await LoadSnapshotForSyncAsync(
+                connection,
+                rootKey,
+                cancellationToken);
+            long operationCount = await ExecuteScalarInt64Async(
+                connection,
+                "SELECT COUNT(*) FROM sync_operations;",
+                cancellationToken);
+            if (operationCount == 0 && previousSnapshot.Accounts.Count > 0)
+            {
+                using var emptyBaseline =
+                    new V2VaultSnapshot([], [], [], changeSequence: 0);
+                syncDrafts = SyncOperationGenerator.Generate(
+                    emptyBaseline,
+                    accounts,
+                    secretVersions,
+                    historyEntries);
+            }
+            else
+            {
+                syncDrafts = SyncOperationGenerator.Generate(
+                    previousSnapshot,
+                    accounts,
+                    secretVersions,
+                    historyEntries);
+            }
+            Guid? localDeviceId = syncDrafts.Count == 0
+                ? null
+                : await _deviceIdentityStore.LoadOrCreateAsync(cancellationToken);
 
             await using SqliteTransaction transaction =
                 (SqliteTransaction)await connection.BeginTransactionAsync(
@@ -239,6 +279,17 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                     transaction,
                     nextSequence,
                     cancellationToken);
+                if (localDeviceId.HasValue)
+                {
+                    await AppendLocalSyncOperationsAsync(
+                        connection,
+                        transaction,
+                        rootKey,
+                        localDeviceId.Value,
+                        syncDrafts,
+                        cancellationToken);
+                }
+
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -264,6 +315,12 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         }
         finally
         {
+            previousSnapshot?.Dispose();
+            foreach (SyncOperationDraft draft in syncDrafts)
+            {
+                draft.Dispose();
+            }
+
             CryptographicOperations.ZeroMemory(rootKey);
         }
     }
@@ -853,6 +910,10 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                     VALUES (1, 0);
                 """,
                 cancellationToken);
+                await CreateSyncSchemaAsync(
+                    connection,
+                    transaction,
+                    cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -901,6 +962,10 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                 PRAGMA user_version = {SchemaVersion.ToString(CultureInfo.InvariantCulture)};
                 """,
                 cancellationToken);
+                await CreateSyncSchemaAsync(
+                    connection,
+                    transaction,
+                    cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -935,6 +1000,38 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                     PRAGMA user_version = {SchemaVersion.ToString(CultureInfo.InvariantCulture)};
                     """,
                     cancellationToken);
+                await CreateSyncSchemaAsync(
+                    connection,
+                    transaction,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+
+            return;
+        }
+
+        if (applicationId == ApplicationId && schemaVersion == 3)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken);
+            try
+            {
+                await CreateSyncSchemaAsync(
+                    connection,
+                    transaction,
+                    cancellationToken);
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    $"PRAGMA user_version = {SchemaVersion.ToString(CultureInfo.InvariantCulture)};",
+                    cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -951,6 +1048,132 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
             throw InvalidDatabase("The selected database is not a supported v2 vault.");
         }
     }
+
+    private static async Task CreateSyncSchemaAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken) =>
+        await ExecuteAsync(
+            connection,
+            transaction,
+            $"""
+            CREATE TABLE IF NOT EXISTS sync_state (
+                singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                device_id TEXT NULL CHECK(device_id IS NULL OR length(device_id) = 36),
+                next_device_sequence INTEGER NOT NULL CHECK(next_device_sequence >= 1),
+                logical_clock INTEGER NOT NULL CHECK(logical_clock >= 0)
+            ) STRICT;
+            INSERT OR IGNORE INTO sync_state(
+                singleton_id,
+                device_id,
+                next_device_sequence,
+                logical_clock)
+            VALUES (1, NULL, 1, 0);
+
+            CREATE TABLE IF NOT EXISTS sync_operations (
+                operation_id TEXT PRIMARY KEY NOT NULL
+                    CHECK(length(operation_id) = 36),
+                device_id TEXT NOT NULL CHECK(length(device_id) = 36),
+                device_sequence INTEGER NOT NULL CHECK(device_sequence >= 1),
+                logical_clock INTEGER NOT NULL CHECK(logical_clock >= 1),
+                occurred_utc_ticks INTEGER NOT NULL CHECK(occurred_utc_ticks >= 0),
+                account_id TEXT NULL CHECK(account_id IS NULL OR length(account_id) = 36),
+                kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 11),
+                field_key TEXT NOT NULL CHECK(length(field_key) BETWEEN 1 AND 64),
+                object_hash BLOB NOT NULL CHECK(length(object_hash) = 32),
+                nonce BLOB NOT NULL CHECK(length(nonce) = 12),
+                ciphertext BLOB NOT NULL
+                    CHECK(length(ciphertext) BETWEEN 1 AND {SyncOperationSerializer.MaximumOperationBytes}),
+                tag BLOB NOT NULL CHECK(length(tag) = 16),
+                UNIQUE(device_id, device_sequence)
+            ) STRICT;
+            CREATE INDEX IF NOT EXISTS sync_operations_order_idx
+                ON sync_operations(logical_clock, device_id, device_sequence);
+
+            CREATE TABLE IF NOT EXISTS sync_operation_parents (
+                operation_id TEXT NOT NULL CHECK(length(operation_id) = 36),
+                parent_id TEXT NOT NULL CHECK(length(parent_id) = 36),
+                PRIMARY KEY(operation_id, parent_id),
+                FOREIGN KEY(operation_id) REFERENCES sync_operations(operation_id)
+                    ON DELETE RESTRICT
+            ) STRICT;
+            CREATE INDEX IF NOT EXISTS sync_parent_lookup_idx
+                ON sync_operation_parents(parent_id);
+
+            CREATE TABLE IF NOT EXISTS sync_applied_operations (
+                operation_id TEXT PRIMARY KEY NOT NULL CHECK(length(operation_id) = 36),
+                applied_utc_ticks INTEGER NOT NULL CHECK(applied_utc_ticks >= 0),
+                FOREIGN KEY(operation_id) REFERENCES sync_operations(operation_id)
+                    ON DELETE RESTRICT
+            ) STRICT;
+
+            CREATE TABLE IF NOT EXISTS sync_outbox (
+                operation_id TEXT PRIMARY KEY NOT NULL CHECK(length(operation_id) = 36),
+                queued_utc_ticks INTEGER NOT NULL CHECK(queued_utc_ticks >= 0),
+                attempt_count INTEGER NOT NULL CHECK(attempt_count >= 0),
+                last_error TEXT NULL CHECK(last_error IS NULL OR length(last_error) <= 512),
+                FOREIGN KEY(operation_id) REFERENCES sync_operations(operation_id)
+                    ON DELETE RESTRICT
+            ) STRICT;
+
+            CREATE TABLE IF NOT EXISTS sync_frontier (
+                operation_id TEXT PRIMARY KEY NOT NULL CHECK(length(operation_id) = 36),
+                FOREIGN KEY(operation_id) REFERENCES sync_operations(operation_id)
+                    ON DELETE RESTRICT
+            ) STRICT;
+
+            CREATE TABLE IF NOT EXISTS sync_field_heads (
+                account_id TEXT NOT NULL CHECK(length(account_id) = 36),
+                field_key TEXT NOT NULL CHECK(length(field_key) BETWEEN 1 AND 64),
+                operation_id TEXT NOT NULL CHECK(length(operation_id) = 36),
+                value_hash BLOB NOT NULL CHECK(length(value_hash) = 32),
+                PRIMARY KEY(account_id, field_key, operation_id),
+                FOREIGN KEY(operation_id) REFERENCES sync_operations(operation_id)
+                    ON DELETE RESTRICT
+            ) STRICT;
+
+            CREATE TABLE IF NOT EXISTS sync_conflicts (
+                conflict_id TEXT PRIMARY KEY NOT NULL CHECK(length(conflict_id) = 36),
+                account_id TEXT NOT NULL CHECK(length(account_id) = 36),
+                kind INTEGER NOT NULL CHECK(kind BETWEEN 0 AND 4),
+                field_key TEXT NOT NULL CHECK(length(field_key) BETWEEN 1 AND 64),
+                operation_a_id TEXT NOT NULL CHECK(length(operation_a_id) = 36),
+                operation_b_id TEXT NOT NULL CHECK(length(operation_b_id) = 36),
+                secret_version_a_id TEXT NULL
+                    CHECK(secret_version_a_id IS NULL OR length(secret_version_a_id) = 36),
+                secret_version_b_id TEXT NULL
+                    CHECK(secret_version_b_id IS NULL OR length(secret_version_b_id) = 36),
+                detected_utc_ticks INTEGER NOT NULL CHECK(detected_utc_ticks >= 0),
+                resolved INTEGER NOT NULL CHECK(resolved IN (0, 1)),
+                UNIQUE(operation_a_id, operation_b_id)
+            ) STRICT;
+
+            CREATE TABLE IF NOT EXISTS sync_account_aliases (
+                source_account_id TEXT PRIMARY KEY NOT NULL
+                    CHECK(length(source_account_id) = 36),
+                canonical_account_id TEXT NOT NULL
+                    CHECK(length(canonical_account_id) = 36)
+            ) STRICT;
+
+            CREATE TABLE IF NOT EXISTS sync_secret_aliases (
+                source_secret_version_id TEXT PRIMARY KEY NOT NULL
+                    CHECK(length(source_secret_version_id) = 36),
+                canonical_secret_version_id TEXT NOT NULL
+                    CHECK(length(canonical_secret_version_id) = 36)
+            ) STRICT;
+
+            CREATE TRIGGER IF NOT EXISTS sync_operations_no_update
+            BEFORE UPDATE ON sync_operations
+            BEGIN
+                SELECT RAISE(ABORT, 'sync operations are immutable');
+            END;
+            CREATE TRIGGER IF NOT EXISTS sync_operations_no_delete
+            BEFORE DELETE ON sync_operations
+            BEGIN
+                SELECT RAISE(ABORT, 'sync operations are immutable');
+            END;
+            """,
+            cancellationToken);
 
     private static async Task VerifySchemaAndIntegrityAsync(
         SqliteConnection connection,

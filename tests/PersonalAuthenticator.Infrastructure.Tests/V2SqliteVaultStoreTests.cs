@@ -182,7 +182,7 @@ public sealed class V2SqliteVaultStoreTests : IDisposable
         await using SqliteCommand versionCommand = verificationConnection.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
         Assert.Equal(
-            3L,
+            4L,
             (long)(await versionCommand.ExecuteScalarAsync(
                 TestContext.Current.CancellationToken))!);
         await using SqliteCommand tableCommand = verificationConnection.CreateCommand();
@@ -235,7 +235,7 @@ public sealed class V2SqliteVaultStoreTests : IDisposable
         await using SqliteCommand commandVersion = verificationConnection.CreateCommand();
         commandVersion.CommandText = "PRAGMA user_version;";
         Assert.Equal(
-            3L,
+            4L,
             (long)(await commandVersion.ExecuteScalarAsync(
                 TestContext.Current.CancellationToken))!);
     }
