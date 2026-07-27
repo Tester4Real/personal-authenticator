@@ -250,11 +250,17 @@ internal sealed class LocalFolderSyncObjectStore
         ReadOnlySpan<byte> objectBytes)
     {
         if (objectBytes.Length is < HeaderLength + TagLength or > MaximumObjectBytes ||
-            !objectBytes[..8].SequenceEqual(Magic) ||
-            BinaryPrimitives.ReadUInt16LittleEndian(objectBytes[8..10]) != Version ||
-            BinaryPrimitives.ReadUInt16LittleEndian(objectBytes[10..12]) != 0)
+            !objectBytes[..8].SequenceEqual(Magic))
         {
             throw InvalidObject();
+        }
+
+        if (BinaryPrimitives.ReadUInt16LittleEndian(objectBytes[8..10]) != Version ||
+            BinaryPrimitives.ReadUInt16LittleEndian(objectBytes[10..12]) != 0)
+        {
+            throw new SafeApplicationException(
+                "Sync.UnsupportedRequiredFeature",
+                "The sync folder requires a newer protocol. Sync is read-only until the application is upgraded.");
         }
 
         Guid repositoryId = new(objectBytes[12..28]);

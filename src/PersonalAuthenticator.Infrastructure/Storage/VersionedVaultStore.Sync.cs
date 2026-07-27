@@ -8,6 +8,7 @@ namespace PersonalAuthenticator.Infrastructure.Storage;
 public sealed partial class VersionedVaultStore
 {
     private bool _isSyncing;
+    private bool _compatibilityReadOnly;
     private string? _lastSyncError;
 
     public async Task ConfigureAsync(
@@ -83,6 +84,10 @@ public sealed partial class VersionedVaultStore
             IReadOnlyList<SyncOperation>? outbox = null;
             try
             {
+                using LocalFolderDownloadResult download =
+                    await _syncObjectStore.DownloadAsync(
+                        config,
+                        cancellationToken);
                 outbox = await store.LoadOutboxAsync(cancellationToken);
                 var uploadedIds = new List<Guid>(outbox.Count);
                 foreach (SyncOperation operation in outbox)
@@ -97,10 +102,6 @@ public sealed partial class VersionedVaultStore
                 // Uploads are acknowledged only after every object has been
                 // atomically written, reopened, authenticated, and compared.
                 await store.MarkOutboxSentAsync(uploadedIds, cancellationToken);
-                using LocalFolderDownloadResult download =
-                    await _syncObjectStore.DownloadAsync(
-                        config,
-                        cancellationToken);
                 await store.ApplyRemoteOperationsAsync(
                     download.Operations,
                     cancellationToken);
@@ -117,10 +118,16 @@ public sealed partial class VersionedVaultStore
                 _lastSyncError = download.QuarantinedObjectCount == 0
                     ? null
                     : $"{download.QuarantinedObjectCount} invalid sync object(s) were quarantined.";
+                _compatibilityReadOnly = false;
             }
             catch (SafeApplicationException exception)
             {
                 _lastSyncError = exception.Message;
+                if (exception.ErrorCode == "Sync.UnsupportedRequiredFeature")
+                {
+                    _compatibilityReadOnly = true;
+                }
+
                 throw;
             }
             catch (Exception exception) when (
@@ -200,6 +207,7 @@ public sealed partial class VersionedVaultStore
             return new SyncStatus(
                 IsConfigured: false,
                 _isSyncing,
+                _compatibilityReadOnly,
                 BackendPath: null,
                 DeviceId: null,
                 PendingOperationCount: 0,
@@ -220,6 +228,7 @@ public sealed partial class VersionedVaultStore
         return new SyncStatus(
             IsConfigured: true,
             _isSyncing,
+            _compatibilityReadOnly,
             config.FolderPath,
             deviceId,
             pending,

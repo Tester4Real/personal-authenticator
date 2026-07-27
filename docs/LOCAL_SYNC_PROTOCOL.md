@@ -40,6 +40,8 @@ Every `.pao` contains an authenticated fixed header (format version, repository 
 
 Readers validate paths and identifiers before opening, check file length before allocation, cap an operation at 128 KiB and an object collection at 100,000 files, reject trailing data/unknown required payload flags, and strictly validate the payload against its declared operation kind. Malformed, wrongly placed, unauthenticated, or cross-repository objects are moved to `quarantine` and are never applied. No compression is accepted, so compressed-data bombs are impossible in this format.
 
+An authenticated object with an unknown envelope version, reserved required flags, operation kind, or required payload flags is not quarantined or rewritten. The sync run stops before uploading the local outbox and reports read-only compatibility mode. On restart the folder is checked again before any upload, so older applications never rewrite data they do not understand.
+
 ## Deterministic application
 
 Operations are replayed in `(Lamport clock, device ID, device sequence, operation ID)` order. Causal parents must already be applied. An operation with a missing parent remains pending and is retried when more objects arrive.

@@ -27,11 +27,25 @@ public sealed class Phase4LocalSyncTests : IDisposable
             Assert.Equal(operation.DeviceId, reopened.DeviceId);
             Assert.Equal(operation.AccountId, reopened.AccountId);
 
-            bytes[0] ^= 0x5A;
+            byte[] truncated = bytes[..^1].ToArray();
+            CryptographicOperations.ZeroMemory(bytes);
+            bytes = truncated;
             SafeApplicationException exception =
                 Assert.Throws<SafeApplicationException>(
                     () => SyncOperationSerializer.Deserialize(bytes));
             Assert.Equal("Sync.InvalidOperation", exception.ErrorCode);
+
+            CryptographicOperations.ZeroMemory(bytes);
+            bytes = SyncOperationSerializer.Serialize(operation);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(
+                bytes,
+                99);
+            SafeApplicationException unsupported =
+                Assert.Throws<SafeApplicationException>(
+                    () => SyncOperationSerializer.Deserialize(bytes));
+            Assert.Equal(
+                "Sync.UnsupportedRequiredFeature",
+                unsupported.ErrorCode);
         }
         finally
         {

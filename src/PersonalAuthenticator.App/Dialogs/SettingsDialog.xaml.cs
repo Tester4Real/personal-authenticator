@@ -545,7 +545,10 @@ public sealed partial class SettingsDialog : ContentDialog
                 : "never";
             SyncStatusText.Text = !status.IsConfigured
                 ? "Local-folder sync is not configured."
-                : $"Device {status.DeviceId:D} · {status.PendingOperationCount} pending · " +
+                : (status.IsReadOnlyCompatibilityMode
+                    ? "Read-only compatibility mode · upgrade the app before this device can write sync objects · "
+                    : string.Empty) +
+                  $"Device {status.DeviceId:D} · {status.PendingOperationCount} pending · " +
                   $"{status.ConflictCount} conflict(s) · last success: {lastSuccess}" +
                   (string.IsNullOrWhiteSpace(status.LastError)
                       ? string.Empty

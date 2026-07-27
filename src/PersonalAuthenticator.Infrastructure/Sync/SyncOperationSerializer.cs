@@ -75,7 +75,7 @@ internal static class SyncOperationSerializer
             using var reader = new BinaryReader(stream, StrictUtf8, leaveOpen: false);
             if (reader.ReadInt32() != FormatVersion)
             {
-                throw InvalidOperation("The sync operation version is not supported.");
+                throw UnsupportedRequiredFeature();
             }
 
             Guid id = ReadGuid(reader);
@@ -85,6 +85,10 @@ internal static class SyncOperationSerializer
             DateTimeOffset occurredAtUtc = ReadDateTime(reader);
             Guid? accountId = ReadNullableGuid(reader);
             var kind = (SyncOperationKind)reader.ReadInt32();
+            if (!Enum.IsDefined(kind))
+            {
+                throw UnsupportedRequiredFeature();
+            }
             string fieldKey = ReadString(reader);
             int parentCount = reader.ReadInt32();
             if (parentCount is < 0 or > MaximumParents)
@@ -238,7 +242,7 @@ internal static class SyncOperationSerializer
         int flags = reader.ReadInt32();
         if ((flags & ~0x7FF) != 0)
         {
-            throw InvalidOperation("A sync operation contains unknown required payload fields.");
+            throw UnsupportedRequiredFeature();
         }
 
         string? text = (flags & (1 << 0)) != 0 ? ReadString(reader) : null;
@@ -549,4 +553,9 @@ internal static class SyncOperationSerializer
 
     private static SafeApplicationException InvalidOperation(string message) =>
         new("Sync.InvalidOperation", message);
+
+    private static SafeApplicationException UnsupportedRequiredFeature() =>
+        new(
+            "Sync.UnsupportedRequiredFeature",
+            "The sync folder contains required protocol features that this version does not understand. Sync is read-only until the application is upgraded.");
 }
