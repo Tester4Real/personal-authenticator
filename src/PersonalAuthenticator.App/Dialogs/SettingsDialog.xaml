@@ -153,13 +153,69 @@
         </ScrollViewer>
       </TabViewItem>
 
+      <TabViewItem Header="Local sync" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="12">
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="Optional local-folder sync is encrypted and works offline. Use a folder shared by your Windows installations. GitHub sync is not part of this phase."
+                Severity="Informational" />
+            <TextBox
+                x:Name="SyncFolderBox"
+                Header="Local sync folder"
+                IsReadOnly="True"
+                PlaceholderText="Choose a folder…" />
+            <Button
+                Click="ChooseSyncFolderButton_Click"
+                Content="Choose folder…"
+                HorizontalAlignment="Left" />
+            <PasswordBox
+                x:Name="SyncPasswordBox"
+                Header="Sync password (12+ characters)"
+                PasswordChar="●" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Click="ConfigureSyncButton_Click" Content="Configure" />
+              <Button Click="SyncNowButton_Click" Content="Sync now" />
+              <Button Click="RefreshSyncButton_Click" Content="Refresh status" />
+            </StackPanel>
+            <TextBlock
+                x:Name="SyncStatusText"
+                Text="Sync status has not been checked."
+                TextWrapping="Wrap" />
+            <TextBlock FontWeight="SemiBold" Text="Unresolved conflicts" />
+            <ComboBox
+                x:Name="ConflictBox"
+                DisplayMemberPath="Description"
+                Header="Conflict"
+                MinWidth="560" />
+            <ComboBox
+                x:Name="ConflictResolutionBox"
+                Header="Resolution"
+                SelectedIndex="0">
+              <ComboBoxItem Content="Keep version A" />
+              <ComboBoxItem Content="Keep version B" />
+              <ComboBoxItem Content="Keep both" />
+              <ComboBoxItem Content="Separate accounts" />
+            </ComboBox>
+            <Button
+                Click="ResolveConflictButton_Click"
+                Content="Resolve selected conflict"
+                HorizontalAlignment="Left" />
+            <TextBlock
+                Text="Secret conflicts preserve every encrypted secret version until you explicitly resolve them."
+                TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
       <TabViewItem Header="About" IsClosable="False">
         <ScrollViewer Padding="8,16,8,8">
           <StackPanel Spacing="10">
             <TextBlock FontSize="24" FontWeight="SemiBold" Text="Personal Authenticator" />
-            <TextBlock Text="Version 1.0.0 · Local-only TOTP for Windows" />
+            <TextBlock Text="Version 2.0 preview · Local-first TOTP for Windows" />
             <TextBlock
-                Text="No analytics, telemetry, advertisements, cloud sync, or network API."
+                Text="No analytics, telemetry, advertisements, GitHub integration, or required network access."
                 TextWrapping="Wrap" />
             <TextBlock FontWeight="SemiBold" Text="Third-party components" />
             <TextBlock

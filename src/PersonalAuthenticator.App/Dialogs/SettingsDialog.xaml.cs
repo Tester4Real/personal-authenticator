@@ -13,21 +13,25 @@ public sealed partial class SettingsDialog : ContentDialog
     private readonly MainViewModel _viewModel;
     private readonly IBackupService _backupService;
     private readonly IRecoveryService _recoveryService;
+    private readonly ILocalFolderSyncService _syncService;
     private readonly nint _windowHandle;
 
     public SettingsDialog(
         MainViewModel viewModel,
         IBackupService backupService,
         IRecoveryService recoveryService,
+        ILocalFolderSyncService syncService,
         nint windowHandle)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _backupService = backupService;
         _recoveryService = recoveryService;
+        _syncService = syncService;
         _windowHandle = windowHandle;
         PopulateSettings(viewModel.Settings);
         PopulateMigrationState();
+        _ = RefreshSyncStatusAsync();
     }
 
     private async void Dialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
@@ -411,6 +415,157 @@ public sealed partial class SettingsDialog : ContentDialog
         return file?.Path;
     }
 
+    private async void ChooseSyncFolderButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, _windowHandle);
+        Windows.Storage.StorageFolder? folder = await picker.PickSingleFolderAsync();
+        if (folder is not null)
+        {
+            SyncFolderBox.Text = folder.Path;
+        }
+    }
+
+    private async void ConfigureSyncButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        string password = SyncPasswordBox.Password;
+        try
+        {
+            await _syncService.ConfigureAsync(
+                SyncFolderBox.Text,
+                password.AsMemory(),
+                CancellationToken.None);
+            ShowBackupStatus(
+                "Encrypted local-folder sync was configured. No network service or token is used.",
+                isError: false);
+            await RefreshSyncStatusAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "Local-folder sync could not be configured.",
+                isError: true);
+        }
+        finally
+        {
+            SyncPasswordBox.Password = string.Empty;
+        }
+    }
+
+    private async void SyncNowButton_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            await _syncService.SyncNowAsync(CancellationToken.None);
+            await _viewModel.ReloadVaultAsync(CancellationToken.None);
+            ShowBackupStatus("Local-folder synchronisation completed.", isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "Local-folder synchronisation failed. Pending changes remain queued.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshSyncStatusAsync();
+        }
+    }
+
+    private async void RefreshSyncButton_Click(
+        object sender,
+        RoutedEventArgs args) =>
+        await RefreshSyncStatusAsync();
+
+    private async void ResolveConflictButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (ConflictBox.SelectedItem is not SyncConflictSummary conflict)
+        {
+            ShowBackupStatus("Select a conflict to resolve.", isError: true);
+            return;
+        }
+
+        SyncConflictResolution resolution = ConflictResolutionBox.SelectedIndex switch
+        {
+            1 => SyncConflictResolution.KeepB,
+            2 => SyncConflictResolution.KeepBoth,
+            3 => SyncConflictResolution.SeparateAccounts,
+            _ => SyncConflictResolution.KeepA,
+        };
+        try
+        {
+            await _syncService.ResolveConflictAsync(
+                conflict.Id,
+                resolution,
+                CancellationToken.None);
+            await _viewModel.ReloadVaultAsync(CancellationToken.None);
+            ShowBackupStatus(
+                "The conflict resolution was committed locally and queued for sync.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The conflict could not be resolved.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshSyncStatusAsync();
+        }
+    }
+
+    private async Task RefreshSyncStatusAsync()
+    {
+        try
+        {
+            SyncStatus status = await _syncService.GetSyncStatusAsync(
+                CancellationToken.None);
+            SyncFolderBox.Text = status.BackendPath ?? SyncFolderBox.Text;
+            string lastSuccess = status.LastSuccessfulSyncAtUtc.HasValue
+                ? status.LastSuccessfulSyncAtUtc.Value.ToString(
+                    "yyyy-MM-dd HH:mm 'UTC'",
+                    System.Globalization.CultureInfo.InvariantCulture)
+                : "never";
+            SyncStatusText.Text = !status.IsConfigured
+                ? "Local-folder sync is not configured."
+                : $"Device {status.DeviceId:D} · {status.PendingOperationCount} pending · " +
+                  $"{status.ConflictCount} conflict(s) · last success: {lastSuccess}" +
+                  (string.IsNullOrWhiteSpace(status.LastError)
+                      ? string.Empty
+                      : $" · {status.LastError}");
+            IReadOnlyList<SyncConflictSummary> conflicts =
+                status.IsConfigured
+                    ? await _syncService.GetConflictsAsync(CancellationToken.None)
+                    : [];
+            ConflictBox.ItemsSource = conflicts;
+            ConflictBox.SelectedIndex = conflicts.Count == 0 ? -1 : 0;
+        }
+        catch (Exception exception)
+        {
+            SyncStatusText.Text = exception is SafeApplicationException
+                ? exception.Message
+                : "Sync status could not be read.";
+            ConflictBox.ItemsSource = null;
+        }
+    }
+
     private void ClearRecoveryPasswords()
     {
         RecoveryPasswordBox.Password = string.Empty;
@@ -421,6 +576,7 @@ public sealed partial class SettingsDialog : ContentDialog
     {
         ClearPasswords();
         ClearRecoveryPasswords();
+        SyncPasswordBox.Password = string.Empty;
     }
 
     private void ClearPasswords()

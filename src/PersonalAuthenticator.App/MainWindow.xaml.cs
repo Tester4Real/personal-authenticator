@@ -28,6 +28,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly IAutomaticLockMonitor _lockMonitor;
     private readonly IBackupService _backupService;
     private readonly IRecoveryService _recoveryService;
+    private readonly ILocalFolderSyncService _syncService;
     private readonly DispatcherQueueTimer _timer;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly nint _windowHandle;
@@ -46,7 +47,8 @@ public sealed partial class MainWindow : Window, IDisposable
         IQrCodeGenerator qrGenerator,
         IAutomaticLockMonitor lockMonitor,
         IBackupService backupService,
-        IRecoveryService recoveryService)
+        IRecoveryService recoveryService,
+        ILocalFolderSyncService syncService)
     {
         try
         {
@@ -64,6 +66,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _lockMonitor = lockMonitor;
         _backupService = backupService;
         _recoveryService = recoveryService;
+        _syncService = syncService;
         Root.DataContext = ViewModel;
         Root.AddHandler(
             UIElement.KeyDownEvent,
@@ -913,6 +916,7 @@ public sealed partial class MainWindow : Window, IDisposable
             ViewModel,
             _backupService,
             _recoveryService,
+            _syncService,
             _windowHandle)
         {
             XamlRoot = Root.XamlRoot,
