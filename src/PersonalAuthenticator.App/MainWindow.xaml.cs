@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly IQrCodeGenerator _qrGenerator;
     private readonly IAutomaticLockMonitor _lockMonitor;
     private readonly IBackupService _backupService;
+    private readonly IRecoveryService _recoveryService;
     private readonly DispatcherQueueTimer _timer;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly nint _windowHandle;
@@ -44,7 +45,8 @@ public sealed partial class MainWindow : Window, IDisposable
         IQrCodeDecoder qrDecoder,
         IQrCodeGenerator qrGenerator,
         IAutomaticLockMonitor lockMonitor,
-        IBackupService backupService)
+        IBackupService backupService,
+        IRecoveryService recoveryService)
     {
         try
         {
@@ -61,6 +63,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _qrGenerator = qrGenerator;
         _lockMonitor = lockMonitor;
         _backupService = backupService;
+        _recoveryService = recoveryService;
         Root.DataContext = ViewModel;
         Root.AddHandler(
             UIElement.KeyDownEvent,
@@ -906,7 +909,11 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private async void SettingsButton_Click(object sender, RoutedEventArgs args)
     {
-        var dialog = new SettingsDialog(ViewModel, _backupService, _windowHandle)
+        var dialog = new SettingsDialog(
+            ViewModel,
+            _backupService,
+            _recoveryService,
+            _windowHandle)
         {
             XamlRoot = Root.XamlRoot,
         };

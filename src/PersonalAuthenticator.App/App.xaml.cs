@@ -62,6 +62,8 @@ public partial class App : Application
             provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IV2VaultFeatures>(
             provider => provider.GetRequiredService<VersionedVaultStore>());
+        services.AddSingleton<IRecoveryService>(
+            provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IVaultService, VaultService>();
         services.AddSingleton<IBackupService, PasswordBackupService>();
         services.AddSingleton<IQrCodeDecoder, LocalQrCodeDecoder>();

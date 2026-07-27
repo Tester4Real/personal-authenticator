@@ -126,6 +126,12 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    public async Task ReloadVaultAsync(CancellationToken cancellationToken)
+    {
+        await _vault.ReloadAsync(cancellationToken);
+        RefreshCodes();
+    }
+
     public async Task<bool> UnlockAsync(CancellationToken cancellationToken)
     {
         if (IsUnlocked)

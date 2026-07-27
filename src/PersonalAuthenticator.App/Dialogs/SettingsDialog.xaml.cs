@@ -12,16 +12,19 @@ public sealed partial class SettingsDialog : ContentDialog
 {
     private readonly MainViewModel _viewModel;
     private readonly IBackupService _backupService;
+    private readonly IRecoveryService _recoveryService;
     private readonly nint _windowHandle;
 
     public SettingsDialog(
         MainViewModel viewModel,
         IBackupService backupService,
+        IRecoveryService recoveryService,
         nint windowHandle)
     {
         InitializeComponent();
         _viewModel = viewModel;
         _backupService = backupService;
+        _recoveryService = recoveryService;
         _windowHandle = windowHandle;
         PopulateSettings(viewModel.Settings);
         PopulateMigrationState();
@@ -231,6 +234,193 @@ public sealed partial class SettingsDialog : ContentDialog
             ? Visibility.Visible
             : Visibility.Collapsed;
         UpgradeVaultButton.IsEnabled = _viewModel.CanUpgradeVault;
+    }
+
+    private async void CreateRecoveryButton_Click(object sender, RoutedEventArgs args)
+    {
+        if (!_viewModel.IsUnlocked)
+        {
+            ShowBackupStatus(
+                "Unlock the vault before creating a recovery bundle.",
+                isError: true);
+            return;
+        }
+
+        string password = RecoveryPasswordBox.Password;
+        if (!string.Equals(
+                password,
+                ConfirmRecoveryPasswordBox.Password,
+                StringComparison.Ordinal))
+        {
+            ShowBackupStatus("The recovery passwords do not match.", isError: true);
+            return;
+        }
+
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, _windowHandle);
+        Windows.Storage.StorageFolder? folder = await picker.PickSingleFolderAsync();
+        if (folder is null)
+        {
+            ClearRecoveryPasswords();
+            return;
+        }
+
+        try
+        {
+            RecoveryBundleInfo info = await _recoveryService.CreateRecoveryBundleAsync(
+                folder.Path,
+                password.AsMemory(),
+                CancellationToken.None);
+            ShowBackupStatus(
+                $"Recovery-{info.Slot} was encrypted and fully verified.",
+                isError: false);
+            await RefreshRecoveryHealthAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The recovery bundle could not be created.",
+                isError: true);
+        }
+        finally
+        {
+            ClearRecoveryPasswords();
+        }
+    }
+
+    private async void VerifyRecoveryButton_Click(object sender, RoutedEventArgs args)
+    {
+        string password = RecoveryPasswordBox.Password;
+        string? filePath = await PickRecoveryFileAsync();
+        if (filePath is null)
+        {
+            ClearRecoveryPasswords();
+            return;
+        }
+
+        try
+        {
+            RecoveryBundleInfo info = await _recoveryService.VerifyRecoveryBundleAsync(
+                filePath,
+                password.AsMemory(),
+                CancellationToken.None);
+            ShowBackupStatus(
+                $"Recovery-{info.Slot} passed a complete decrypt and record verification.",
+                isError: false);
+            await RefreshRecoveryHealthAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The recovery bundle failed verification.",
+                isError: true);
+        }
+        finally
+        {
+            ClearRecoveryPasswords();
+        }
+    }
+
+    private async void RestoreRecoveryButton_Click(object sender, RoutedEventArgs args)
+    {
+        string password = RecoveryPasswordBox.Password;
+        if (!string.Equals(
+                password,
+                ConfirmRecoveryPasswordBox.Password,
+                StringComparison.Ordinal))
+        {
+            ShowBackupStatus("The recovery passwords do not match.", isError: true);
+            return;
+        }
+
+        string? filePath = await PickRecoveryFileAsync();
+        if (filePath is null)
+        {
+            ClearRecoveryPasswords();
+            return;
+        }
+
+        try
+        {
+            RecoveryBundleInfo info = await _recoveryService.RestoreRecoveryBundleAsync(
+                filePath,
+                password.AsMemory(),
+                CancellationToken.None);
+            await _viewModel.ReloadVaultAsync(CancellationToken.None);
+            ShowBackupStatus(
+                $"Recovery-{info.Slot} was restored into a new verified local vault. The previous vault was retained.",
+                isError: false);
+            await RefreshRecoveryHealthAsync();
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The recovery bundle could not be restored.",
+                isError: true);
+        }
+        finally
+        {
+            ClearRecoveryPasswords();
+        }
+    }
+
+    private async void RefreshRecoveryHealthButton_Click(
+        object sender,
+        RoutedEventArgs args) =>
+        await RefreshRecoveryHealthAsync();
+
+    private async Task RefreshRecoveryHealthAsync()
+    {
+        try
+        {
+            RecoveryHealthStatus health = await _recoveryService.GetRecoveryHealthAsync(
+                CancellationToken.None);
+            RecoveryHealthText.Text = !health.HasVerifiedRecovery
+                ? "No verified Recovery-A or Recovery-B bundle is currently available."
+                : health.IsOutdated
+                    ? $"Recovery is outdated: {health.ChangesSinceVerifiedRecovery} vault changes since the last complete verification on {health.LastVerifiedAtUtc:yyyy-MM-dd HH:mm} UTC."
+                    : $"Recovery is healthy: {health.ChangesSinceVerifiedRecovery} vault changes since verified Recovery-{health.LastVerifiedSlot} on {health.LastVerifiedAtUtc:yyyy-MM-dd HH:mm} UTC.";
+        }
+        catch (Exception exception)
+        {
+            RecoveryHealthText.Text = exception is SafeApplicationException
+                ? exception.Message
+                : "Recovery health could not be checked.";
+        }
+    }
+
+    private async Task<string?> PickRecoveryFileAsync()
+    {
+        var picker = new FileOpenPicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add(".par");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, _windowHandle);
+        Windows.Storage.StorageFile? file = await picker.PickSingleFileAsync();
+        return file?.Path;
+    }
+
+    private void ClearRecoveryPasswords()
+    {
+        RecoveryPasswordBox.Password = string.Empty;
+        ConfirmRecoveryPasswordBox.Password = string.Empty;
+    }
+
+    private void Dialog_Closed(ContentDialog sender, ContentDialogClosedEventArgs args)
+    {
+        ClearPasswords();
+        ClearRecoveryPasswords();
     }
 
     private void ClearPasswords()
