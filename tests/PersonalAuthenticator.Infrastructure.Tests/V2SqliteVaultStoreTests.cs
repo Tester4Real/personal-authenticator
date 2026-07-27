@@ -164,7 +164,11 @@ public sealed class V2SqliteVaultStoreTests : IDisposable
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             await using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
-                "DROP TABLE account_history_records; PRAGMA user_version = 1;";
+                """
+                DROP TABLE account_history_records;
+                DROP TABLE vault_metadata;
+                PRAGMA user_version = 1;
+                """;
             await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
         }
 
@@ -178,7 +182,7 @@ public sealed class V2SqliteVaultStoreTests : IDisposable
         await using SqliteCommand versionCommand = verificationConnection.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
         Assert.Equal(
-            2L,
+            3L,
             (long)(await versionCommand.ExecuteScalarAsync(
                 TestContext.Current.CancellationToken))!);
         await using SqliteCommand tableCommand = verificationConnection.CreateCommand();
@@ -188,6 +192,79 @@ public sealed class V2SqliteVaultStoreTests : IDisposable
             1L,
             (long)(await tableCommand.ExecuteScalarAsync(
                 TestContext.Current.CancellationToken))!);
+    }
+
+    [Fact]
+    public async Task Load_SchemaTwoDatabase_UpgradesChangeSequenceTransactionally()
+    {
+        string databasePath = Path.Combine(_directory, "vault-v2.db");
+        using var keyProvider = new FixedRootKeyProvider();
+        var store = new V2SqliteVaultStore(databasePath, keyProvider);
+        (VaultAccountV2 account, SecretVersionV2 version) = CreateActiveAccount();
+        using (version)
+        {
+            await store.SaveAsync(
+                [account],
+                [version],
+                TestContext.Current.CancellationToken);
+        }
+
+        string connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Pooling = false,
+        }.ToString();
+        await using (var connection = new SqliteConnection(connectionString))
+        {
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                """
+                DROP TABLE vault_metadata;
+                PRAGMA user_version = 2;
+                """;
+            await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        }
+
+        using V2VaultSnapshot snapshot = await store.LoadAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(0, snapshot.ChangeSequence);
+
+        await using var verificationConnection = new SqliteConnection(connectionString);
+        await verificationConnection.OpenAsync(TestContext.Current.CancellationToken);
+        await using SqliteCommand commandVersion = verificationConnection.CreateCommand();
+        commandVersion.CommandText = "PRAGMA user_version;";
+        Assert.Equal(
+            3L,
+            (long)(await commandVersion.ExecuteScalarAsync(
+                TestContext.Current.CancellationToken))!);
+    }
+
+    [Fact]
+    public async Task Save_AdvancesChangeSequenceOnlyAfterSuccessfulTransaction()
+    {
+        string databasePath = Path.Combine(_directory, "vault-v2.db");
+        using var keyProvider = new FixedRootKeyProvider();
+        var store = new V2SqliteVaultStore(databasePath, keyProvider);
+        (VaultAccountV2 account, SecretVersionV2 version) = CreateActiveAccount();
+        using (version)
+        {
+            await store.SaveAsync(
+                [account],
+                [version],
+                TestContext.Current.CancellationToken);
+            using V2VaultSnapshot first = await store.LoadAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(1, first.ChangeSequence);
+
+            await store.SaveAsync(
+                [account],
+                [version],
+                TestContext.Current.CancellationToken);
+            using V2VaultSnapshot second = await store.LoadAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(2, second.ChangeSequence);
+        }
     }
 
     [Fact]

@@ -13,7 +13,7 @@ namespace PersonalAuthenticator.Infrastructure.Storage;
 public sealed class V2SqliteVaultStore : IV2VaultStore
 {
     private const int ApplicationId = 0x50415632;
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
     private const int MaximumAccounts = 10_000;
     private const int MaximumSecretVersions = 100_000;
     private const int MaximumHistoryEntries = 1_000_000;
@@ -87,8 +87,16 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                 rootKey,
                 historyEntries,
                 cancellationToken);
+            long changeSequence = await ReadChangeSequenceAsync(
+                connection,
+                transaction: null,
+                cancellationToken);
             ValidateSnapshot(accounts, secretVersions, historyEntries);
-            return new V2VaultSnapshot(accounts, secretVersions, historyEntries);
+            return new V2VaultSnapshot(
+                accounts,
+                secretVersions,
+                historyEntries,
+                changeSequence);
         }
         catch (SafeApplicationException)
         {
@@ -123,6 +131,35 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         IReadOnlyCollection<VaultAccountV2> accounts,
         IReadOnlyCollection<SecretVersionV2> secretVersions,
         IReadOnlyCollection<AccountHistoryEntryV2> historyEntries,
+        CancellationToken cancellationToken) =>
+        await SaveCoreAsync(
+            accounts,
+            secretVersions,
+            historyEntries,
+            minimumPreviousSequence: 0,
+            cancellationToken);
+
+    internal async Task SaveRecoveredAsync(
+        IReadOnlyCollection<VaultAccountV2> accounts,
+        IReadOnlyCollection<SecretVersionV2> secretVersions,
+        IReadOnlyCollection<AccountHistoryEntryV2> historyEntries,
+        long sourceChangeSequence,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceChangeSequence);
+        await SaveCoreAsync(
+            accounts,
+            secretVersions,
+            historyEntries,
+            sourceChangeSequence,
+            cancellationToken);
+    }
+
+    private async Task SaveCoreAsync(
+        IReadOnlyCollection<VaultAccountV2> accounts,
+        IReadOnlyCollection<SecretVersionV2> secretVersions,
+        IReadOnlyCollection<AccountHistoryEntryV2> historyEntries,
+        long minimumPreviousSequence,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(accounts);
@@ -151,6 +188,12 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                     cancellationToken);
             try
             {
+                long currentSequence = await ReadChangeSequenceAsync(
+                    connection,
+                    transaction,
+                    cancellationToken);
+                long nextSequence = checked(
+                    Math.Max(currentSequence, minimumPreviousSequence) + 1);
                 await ExecuteAsync(
                     connection,
                     transaction,
@@ -191,6 +234,11 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                         cancellationToken);
                 }
 
+                await WriteChangeSequenceAsync(
+                    connection,
+                    transaction,
+                    nextSequence,
+                    cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -560,7 +608,7 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         }
     }
 
-    private static void ValidateSnapshot(
+    internal static void ValidateSnapshot(
         IReadOnlyCollection<VaultAccountV2> accounts,
         IReadOnlyCollection<SecretVersionV2> secretVersions,
         IReadOnlyCollection<AccountHistoryEntryV2> historyEntries)
@@ -676,6 +724,51 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
         }
     }
 
+    private static async Task<long> ReadChangeSequenceAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT change_sequence
+            FROM vault_metadata
+            WHERE singleton_id = 1;
+            """;
+        object? result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is not long sequence || sequence < 0)
+        {
+            throw InvalidDatabase("The v2 vault change sequence is invalid.");
+        }
+
+        return sequence;
+    }
+
+    private static async Task WriteChangeSequenceAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long sequence,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(sequence);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE vault_metadata
+            SET change_sequence = $sequence
+            WHERE singleton_id = 1;
+            """;
+        command.Parameters.AddWithValue("$sequence", sequence);
+        int rowsChanged = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (rowsChanged != 1)
+        {
+            throw InvalidDatabase("The v2 vault change sequence could not be updated.");
+        }
+    }
+
     private static async Task EnsureSchemaAsync(
         SqliteConnection connection,
         bool databaseExisted,
@@ -748,10 +841,18 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                         FOREIGN KEY(account_id) REFERENCES account_records(account_id)
                             ON DELETE CASCADE
                     ) STRICT;
-                    CREATE INDEX account_history_account_idx
-                        ON account_history_records(account_id);
-                    """,
-                    cancellationToken);
+                CREATE INDEX account_history_account_idx
+                    ON account_history_records(account_id);
+                CREATE TABLE vault_metadata (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL
+                        CHECK(singleton_id = 1),
+                    change_sequence INTEGER NOT NULL
+                        CHECK(change_sequence >= 0)
+                ) STRICT;
+                INSERT INTO vault_metadata(singleton_id, change_sequence)
+                    VALUES (1, 0);
+                """,
+                cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
             catch
@@ -787,8 +888,50 @@ public sealed class V2SqliteVaultStore : IV2VaultStore
                         FOREIGN KEY(account_id) REFERENCES account_records(account_id)
                             ON DELETE CASCADE
                     ) STRICT;
-                    CREATE INDEX account_history_account_idx
-                        ON account_history_records(account_id);
+                CREATE INDEX account_history_account_idx
+                    ON account_history_records(account_id);
+                CREATE TABLE vault_metadata (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL
+                        CHECK(singleton_id = 1),
+                    change_sequence INTEGER NOT NULL
+                        CHECK(change_sequence >= 0)
+                ) STRICT;
+                INSERT INTO vault_metadata(singleton_id, change_sequence)
+                    VALUES (1, 0);
+                PRAGMA user_version = {SchemaVersion.ToString(CultureInfo.InvariantCulture)};
+                """,
+                cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+
+            return;
+        }
+
+        if (applicationId == ApplicationId && schemaVersion == 2)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken);
+            try
+            {
+                await ExecuteAsync(
+                    connection,
+                    transaction,
+                    $"""
+                    CREATE TABLE vault_metadata (
+                        singleton_id INTEGER PRIMARY KEY NOT NULL
+                            CHECK(singleton_id = 1),
+                        change_sequence INTEGER NOT NULL
+                            CHECK(change_sequence >= 0)
+                    ) STRICT;
+                    INSERT INTO vault_metadata(singleton_id, change_sequence)
+                        VALUES (1, 0);
                     PRAGMA user_version = {SchemaVersion.ToString(CultureInfo.InvariantCulture)};
                     """,
                     cancellationToken);
