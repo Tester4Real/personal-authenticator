@@ -8,11 +8,13 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="Microsoft.Win32.SystemEvents" Version="10.0.10" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
     <PackageVersion Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.2" />
     <PackageVersion Include="Otp.NET" Version="1.4.1" />
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
     <PackageVersion Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
     <PackageVersion Include="xunit" Version="2.9.3" />
