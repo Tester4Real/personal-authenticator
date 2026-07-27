@@ -3,6 +3,7 @@ using PersonalAuthenticator.Core.Abstractions;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
 using PersonalAuthenticator.Infrastructure.Otp;
+using PersonalAuthenticator.Infrastructure.Recovery;
 
 namespace PersonalAuthenticator.Infrastructure.Storage;
 
@@ -10,6 +11,7 @@ public sealed class VersionedVaultStore :
     IVaultStore,
     IVaultMigrationCoordinator,
     IV2VaultFeatures,
+    IRecoveryService,
     IDisposable
 {
     private readonly string _baseDirectory;
@@ -17,12 +19,23 @@ public sealed class VersionedVaultStore :
     private readonly DpapiVaultStore _defaultLegacyStore;
     private readonly ActiveVaultPointerStore _pointerStore;
     private readonly V1ToV2MigrationService _migrationService;
+    private readonly RecoveryBundleManager _recoveryBundles;
+    private readonly Action<RecoveryCheckpoint>? _recoveryCheckpoint;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
     public VersionedVaultStore(
         ILogger<DpapiVaultStore> legacyLogger,
         string? baseDirectory = null)
+        : this(legacyLogger, baseDirectory, recoveryCodec: null, recoveryCheckpoint: null)
+    {
+    }
+
+    internal VersionedVaultStore(
+        ILogger<DpapiVaultStore> legacyLogger,
+        string? baseDirectory,
+        RecoveryBundleCodec? recoveryCodec,
+        Action<RecoveryCheckpoint>? recoveryCheckpoint)
     {
         ArgumentNullException.ThrowIfNull(legacyLogger);
         _legacyLogger = legacyLogger;
@@ -35,6 +48,11 @@ public sealed class VersionedVaultStore :
         _pointerStore = new ActiveVaultPointerStore(
             Path.Combine(_baseDirectory, "active-store.ptr"));
         _migrationService = new V1ToV2MigrationService(_baseDirectory, _pointerStore);
+        _recoveryBundles = new RecoveryBundleManager(
+            _baseDirectory,
+            recoveryCodec,
+            recoveryCheckpoint);
+        _recoveryCheckpoint = recoveryCheckpoint;
     }
 
     public string VaultPath => _pointerStore.PointerPath;
@@ -694,6 +712,153 @@ public sealed class VersionedVaultStore :
         }
     }
 
+    public async Task<RecoveryBundleInfo> CreateRecoveryBundleAsync(
+        string directoryPath,
+        ReadOnlyMemory<char> password,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            return await _recoveryBundles.CreateAsync(
+                directoryPath,
+                password,
+                snapshot,
+                cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<RecoveryBundleInfo> VerifyRecoveryBundleAsync(
+        string filePath,
+        ReadOnlyMemory<char> password,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await _recoveryBundles.VerifyAsync(
+                filePath,
+                password,
+                cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<RecoveryBundleInfo> RestoreRecoveryBundleAsync(
+        string filePath,
+        ReadOnlyMemory<char> password,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken);
+        string? recoveredDatabasePath = null;
+        string? recoveredKeyPath = null;
+        bool activated = false;
+        try
+        {
+            if (!_pointerStore.Exists ||
+                (await _pointerStore.LoadAsync(cancellationToken)).Mode !=
+                    ActiveVaultMode.LocalV2)
+            {
+                throw V2Required();
+            }
+
+            using DecodedRecoveryBundle bundle = await _recoveryBundles.OpenAsync(
+                filePath,
+                password,
+                cancellationToken);
+            DateTimeOffset recoveredAtUtc = DateTimeOffset.UtcNow;
+            List<AccountHistoryEntryV2> recoveredHistory =
+                bundle.Payload.Snapshot.HistoryEntries.ToList();
+            recoveredHistory.AddRange(
+                bundle.Payload.Snapshot.Accounts.Select(
+                    account => new AccountHistoryEntryV2(
+                        Guid.NewGuid(),
+                        account.Id,
+                        AccountHistoryAction.Recovered,
+                        recoveredAtUtc,
+                        account.ActiveSecretVersionId)));
+
+            string databaseFileName = $"vault-v2-recovered-{Guid.NewGuid():N}.db";
+            string keyFileName = $"vault-v2-recovered-{Guid.NewGuid():N}.key";
+            recoveredDatabasePath = ResolveSelectedPath(databaseFileName);
+            recoveredKeyPath = ResolveSelectedPath(keyFileName);
+            _recoveryCheckpoint?.Invoke(RecoveryCheckpoint.BeforeRecoveredVaultWrite);
+            var recoveredStore = new V2SqliteVaultStore(
+                recoveredDatabasePath,
+                recoveredKeyPath);
+            await recoveredStore.SaveRecoveredAsync(
+                bundle.Payload.Snapshot.Accounts,
+                bundle.Payload.Snapshot.SecretVersions,
+                recoveredHistory,
+                bundle.Payload.Snapshot.ChangeSequence,
+                cancellationToken);
+
+            using (V2VaultSnapshot reopened = await recoveredStore.LoadAsync(
+                       cancellationToken))
+            {
+                VerifyRecoveredSnapshot(
+                    bundle.Payload.Snapshot,
+                    recoveredHistory,
+                    reopened);
+            }
+
+            _recoveryCheckpoint?.Invoke(
+                RecoveryCheckpoint.AfterRecoveredVaultVerificationBeforeActivation);
+            RecoveryBundleInfo info = bundle.ToInfo(recoveredAtUtc);
+            await _recoveryBundles.MarkVerifiedAsync(info, cancellationToken);
+            var pointer = new ActiveVaultPointer(
+                ActiveVaultMode.LocalV2,
+                databaseFileName,
+                LegacySourceSha256: null,
+                recoveredAtUtc,
+                keyFileName);
+            await _pointerStore.SaveAsync(pointer, cancellationToken);
+            activated = true;
+            return info;
+        }
+        finally
+        {
+            if (!activated)
+            {
+                TryDeleteRecoveryStaging(recoveredDatabasePath);
+                TryDeleteRecoveryStaging(recoveredKeyPath);
+            }
+
+            _gate.Release();
+        }
+    }
+
+    public async Task<RecoveryHealthStatus> GetRecoveryHealthAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            V2SqliteVaultStore store = await GetActiveV2StoreAsync(cancellationToken);
+            using V2VaultSnapshot snapshot = await store.LoadAsync(cancellationToken);
+            return await _recoveryBundles.GetHealthAsync(
+                snapshot.ChangeSequence,
+                cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -742,7 +907,7 @@ public sealed class VersionedVaultStore :
             ActiveVaultMode.LocalV2 => new V2VaultStoreAdapter(
                 new V2SqliteVaultStore(
                     selectedPath,
-                    Path.Combine(_baseDirectory, "vault-v2.key"))),
+                    ResolveSelectedPath(pointer.RootKeyFileName ?? "vault-v2.key"))),
             _ => throw new SafeApplicationException(
                 "VaultSelector.Invalid",
                 "The active vault selector mode is not supported."),
@@ -787,7 +952,7 @@ public sealed class VersionedVaultStore :
 
         return new V2SqliteVaultStore(
             ResolveSelectedPath(pointer.StoreFileName),
-            Path.Combine(_baseDirectory, "vault-v2.key"));
+            ResolveSelectedPath(pointer.RootKeyFileName ?? "vault-v2.key"));
     }
 
     private static VaultAccountV2 FindV2Account(
@@ -866,6 +1031,115 @@ public sealed class VersionedVaultStore :
             previousSecretVersionId,
             relatedAccountId);
 
+    private static void VerifyRecoveredSnapshot(
+        V2VaultSnapshot source,
+        List<AccountHistoryEntryV2> expectedHistory,
+        V2VaultSnapshot reopened)
+    {
+        if (reopened.ChangeSequence != checked(source.ChangeSequence + 1) ||
+            source.Accounts.Count != reopened.Accounts.Count ||
+            source.SecretVersions.Count != reopened.SecretVersions.Count ||
+            expectedHistory.Count != reopened.HistoryEntries.Count)
+        {
+            throw RecoveryVerificationFailed();
+        }
+
+        Dictionary<Guid, VaultAccountV2> reopenedAccounts =
+            reopened.Accounts.ToDictionary(account => account.Id);
+        foreach (VaultAccountV2 expected in source.Accounts)
+        {
+            if (!reopenedAccounts.TryGetValue(expected.Id, out VaultAccountV2? actual) ||
+                expected.Issuer != actual.Issuer ||
+                expected.AccountName != actual.AccountName ||
+                expected.ActiveSecretVersionId != actual.ActiveSecretVersionId ||
+                expected.Favourite != actual.Favourite ||
+                expected.SortOrder != actual.SortOrder ||
+                expected.CreatedAtUtc != actual.CreatedAtUtc ||
+                expected.UpdatedAtUtc != actual.UpdatedAtUtc ||
+                expected.ArchivedAtUtc != actual.ArchivedAtUtc)
+            {
+                throw RecoveryVerificationFailed();
+            }
+        }
+
+        Dictionary<Guid, SecretVersionV2> reopenedVersions =
+            reopened.SecretVersions.ToDictionary(version => version.Id);
+        foreach (SecretVersionV2 expected in source.SecretVersions)
+        {
+            if (!reopenedVersions.TryGetValue(expected.Id, out SecretVersionV2? actual) ||
+                expected.AccountId != actual.AccountId ||
+                expected.Algorithm != actual.Algorithm ||
+                expected.Digits != actual.Digits ||
+                expected.Period != actual.Period ||
+                expected.ProvisioningUri != actual.ProvisioningUri ||
+                expected.ProvisioningUriOrigin != actual.ProvisioningUriOrigin ||
+                expected.State != actual.State ||
+                expected.CreatedAtUtc != actual.CreatedAtUtc ||
+                expected.RetiredAtUtc != actual.RetiredAtUtc ||
+                !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    expected.Secret,
+                    actual.Secret))
+            {
+                throw RecoveryVerificationFailed();
+            }
+        }
+
+        Dictionary<Guid, AccountHistoryEntryV2> reopenedHistory =
+            reopened.HistoryEntries.ToDictionary(entry => entry.Id);
+        foreach (AccountHistoryEntryV2 expected in expectedHistory)
+        {
+            if (!reopenedHistory.TryGetValue(
+                    expected.Id,
+                    out AccountHistoryEntryV2? actual) ||
+                expected.AccountId != actual.AccountId ||
+                expected.Action != actual.Action ||
+                expected.OccurredAtUtc != actual.OccurredAtUtc ||
+                expected.SecretVersionId != actual.SecretVersionId ||
+                expected.PreviousSecretVersionId != actual.PreviousSecretVersionId ||
+                expected.RelatedAccountId != actual.RelatedAccountId ||
+                expected.ActorDeviceId != actual.ActorDeviceId)
+            {
+                throw RecoveryVerificationFailed();
+            }
+        }
+    }
+
+    private static SafeApplicationException RecoveryVerificationFailed() =>
+        new(
+            "Recovery.VerificationFailed",
+            "The recovered vault did not reopen with every expected record.");
+
+    private static void TryDeleteRecoveryStaging(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return;
+        }
+
+        foreach (string candidate in new[]
+                 {
+                     filePath,
+                     filePath + "-journal",
+                     filePath + "-wal",
+                     filePath + "-shm",
+                 })
+        {
+            try
+            {
+                if (File.Exists(candidate))
+                {
+                    File.Delete(candidate);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
     private static void DisposeAccounts(IEnumerable<TotpAccount> accounts)
     {
         foreach (TotpAccount account in accounts)
@@ -873,6 +1147,9 @@ public sealed class VersionedVaultStore :
             account.Dispose();
         }
     }
+
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
     private static SafeApplicationException MigrationChoiceRequired() =>
         new(

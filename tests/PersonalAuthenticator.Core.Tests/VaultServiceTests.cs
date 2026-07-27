@@ -90,6 +90,25 @@ public sealed class VaultServiceTests
     }
 
     [Fact]
+    public async Task Reload_FromFaultedState_ReopensRecoveredStore()
+    {
+        var store = new InMemoryVaultStore();
+        using var service = new VaultService(store, new FixedClock(), new DuplicateDetector());
+        await service.InitialiseAsync(unlock: true, TestContext.Current.CancellationToken);
+        await service.AddAsync(CreateAccount("one"), TestContext.Current.CancellationToken);
+        store.FailLoads = true;
+        await Assert.ThrowsAsync<IOException>(
+            () => service.ReloadAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(VaultState.Faulted, service.State);
+
+        store.FailLoads = false;
+        await service.ReloadAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(VaultState.Unlocked, service.State);
+        Assert.Single(service.Accounts);
+    }
+
+    [Fact]
     public async Task FailedReplaceImport_RollsBackAndLeavesImportedAccountWithCaller()
     {
         var store = new InMemoryVaultStore();
@@ -273,11 +292,21 @@ public sealed class VaultServiceTests
 
         public bool FailSaves { get; set; }
 
+        public bool FailLoads { get; set; }
+
         public Task<bool> ExistsAsync(CancellationToken cancellationToken) =>
             Task.FromResult(_stored.Count > 0);
 
-        public Task<IReadOnlyList<TotpAccount>> LoadAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<TotpAccount>>(_stored.Select(Clone).ToList());
+        public Task<IReadOnlyList<TotpAccount>> LoadAsync(CancellationToken cancellationToken)
+        {
+            if (FailLoads)
+            {
+                throw new IOException("Simulated load failure.");
+            }
+
+            return Task.FromResult<IReadOnlyList<TotpAccount>>(
+                _stored.Select(Clone).ToList());
+        }
 
         public Task SaveAsync(IReadOnlyCollection<TotpAccount> accounts, CancellationToken cancellationToken)
         {

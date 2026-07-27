@@ -16,7 +16,9 @@ internal sealed class ActiveVaultPointerStore
         WriteIndented = false,
         MaxDepth = 8,
     };
-    private const ushort FormatVersion = 1;
+    private const ushort EnvelopeFormatVersion = 1;
+    private const int LegacyPayloadFormatVersion = 1;
+    private const int CurrentPayloadFormatVersion = 2;
     private const int HeaderLength = 8 + 2 + 4 + 32;
     private const int MaximumPointerBytes = 64 * 1024;
 
@@ -62,7 +64,7 @@ internal sealed class ActiveVaultPointerStore
             }
 
             ushort version = BinaryPrimitives.ReadUInt16LittleEndian(span[8..10]);
-            if (version != FormatVersion)
+            if (version != EnvelopeFormatVersion)
             {
                 throw InvalidPointer("The active vault selector version is not supported.");
             }
@@ -113,7 +115,11 @@ internal sealed class ActiveVaultPointerStore
                     exception);
             }
 
-            if (dto is null || dto.FormatVersion != FormatVersion)
+            if (dto is null ||
+                dto.FormatVersion is not (
+                    LegacyPayloadFormatVersion or CurrentPayloadFormatVersion) ||
+                (dto.FormatVersion == LegacyPayloadFormatVersion &&
+                 dto.RootKeyFileName is not null))
             {
                 throw InvalidPointer("The active vault selector is invalid.");
             }
@@ -122,7 +128,8 @@ internal sealed class ActiveVaultPointerStore
                 dto.Mode,
                 dto.StoreFileName ?? string.Empty,
                 dto.LegacySourceSha256,
-                dto.ActivatedAtUtc);
+                dto.ActivatedAtUtc,
+                dto.RootKeyFileName);
             Validate(pointer);
             return pointer;
         }
@@ -142,11 +149,14 @@ internal sealed class ActiveVaultPointerStore
         Validate(pointer);
         var dto = new PointerDto
         {
-            FormatVersion = FormatVersion,
+            FormatVersion = pointer.RootKeyFileName is null
+                ? LegacyPayloadFormatVersion
+                : CurrentPayloadFormatVersion,
             Mode = pointer.Mode,
             StoreFileName = pointer.StoreFileName,
             LegacySourceSha256 = pointer.LegacySourceSha256,
             ActivatedAtUtc = pointer.ActivatedAtUtc.ToUniversalTime(),
+            RootKeyFileName = pointer.RootKeyFileName,
         };
 
         byte[] plaintext = JsonSerializer.SerializeToUtf8Bytes(dto, JsonOptions);
@@ -196,7 +206,9 @@ internal sealed class ActiveVaultPointerStore
     {
         byte[] envelope = GC.AllocateUninitializedArray<byte>(HeaderLength + protectedPayload.Length);
         Magic.CopyTo(envelope, 0);
-        BinaryPrimitives.WriteUInt16LittleEndian(envelope.AsSpan(8, 2), FormatVersion);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            envelope.AsSpan(8, 2),
+            EnvelopeFormatVersion);
         BinaryPrimitives.WriteInt32LittleEndian(
             envelope.AsSpan(10, 4),
             protectedPayload.Length);
@@ -242,6 +254,26 @@ internal sealed class ActiveVaultPointerStore
             throw InvalidPointer("The active vault selector source hash is invalid.");
         }
 
+        if (pointer.RootKeyFileName is not null &&
+            (pointer.Mode != ActiveVaultMode.LocalV2 ||
+             string.IsNullOrWhiteSpace(pointer.RootKeyFileName) ||
+             pointer.RootKeyFileName.Length > 128 ||
+             !pointer.RootKeyFileName.All(
+                 character =>
+                     char.IsAsciiLetterOrDigit(character) ||
+                     character is '-' or '_' or '.') ||
+             !string.Equals(
+                 Path.GetFileName(pointer.RootKeyFileName),
+                 pointer.RootKeyFileName,
+                 StringComparison.Ordinal) ||
+             !string.Equals(
+                 Path.GetExtension(pointer.RootKeyFileName),
+                 ".key",
+                 StringComparison.OrdinalIgnoreCase)))
+        {
+            throw InvalidPointer("The active vault selector key path is invalid.");
+        }
+
         if (pointer.ActivatedAtUtc == default)
         {
             throw InvalidPointer("The active vault selector activation time is invalid.");
@@ -262,5 +294,7 @@ internal sealed class ActiveVaultPointerStore
         public string? LegacySourceSha256 { get; set; }
 
         public DateTimeOffset ActivatedAtUtc { get; set; }
+
+        public string? RootKeyFileName { get; set; }
     }
 }

@@ -13,4 +13,5 @@ public enum AccountHistoryAction
     SecretActivated,
     DuplicateAddedSeparately,
     Imported,
+    Recovered,
 }

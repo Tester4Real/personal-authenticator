@@ -126,11 +126,23 @@ public sealed class VaultService : IVaultService
         IReadOnlyList<TotpAccount>? loaded = null;
         try
         {
-            EnsureState(VaultState.Unlocked);
+            EnsureState(VaultState.Unlocked, VaultState.Faulted);
+            bool recoveringFromFault = State == VaultState.Faulted;
+            if (recoveringFromFault)
+            {
+                ClearAccounts();
+                SetState(VaultState.Unlocking);
+            }
+
             loaded = await _store.LoadAsync(cancellationToken);
             ClearAccounts();
             _accounts.AddRange(loaded.OrderBy(account => account.SortOrder));
             loaded = null;
+            if (recoveringFromFault)
+            {
+                SetState(VaultState.Unlocked);
+            }
+
             AccountsChanged?.Invoke(this, EventArgs.Empty);
         }
         catch
