@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
@@ -36,6 +38,26 @@ public sealed class DpapiVaultStoreTests : IDisposable
                 account.Dispose();
             }
         }
+    }
+
+    [Fact]
+    public async Task Save_EmptyVault_MatchesFrozenV1EnvelopeHeader()
+    {
+        var store = new DpapiVaultStore(NullLogger<DpapiVaultStore>.Instance, _directory);
+
+        await store.SaveAsync([], TestContext.Current.CancellationToken);
+
+        byte[] envelope = await File.ReadAllBytesAsync(
+            store.VaultPath,
+            TestContext.Current.CancellationToken);
+        Assert.True(envelope.Length > 54);
+        Assert.Equal("PAVLT001", Encoding.ASCII.GetString(envelope, 0, 8));
+        Assert.Equal(1, BinaryPrimitives.ReadUInt16LittleEndian(envelope.AsSpan(8, 2)));
+        int protectedLength = BinaryPrimitives.ReadInt32LittleEndian(envelope.AsSpan(18, 4));
+        Assert.Equal(envelope.Length - 54, protectedLength);
+        Assert.Equal(
+            SHA256.HashData(envelope.AsSpan(54)),
+            envelope.AsSpan(22, 32).ToArray());
     }
 
     [Fact]
