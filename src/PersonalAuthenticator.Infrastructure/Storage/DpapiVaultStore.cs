@@ -23,7 +23,7 @@ public sealed class DpapiVaultStore : IVaultStore
     private readonly Action<string> _prepareRestrictiveStorage;
 
     public DpapiVaultStore(ILogger<DpapiVaultStore> logger, string? baseDirectory = null)
-        : this(logger, baseDirectory, PrepareRestrictiveStorage)
+        : this(logger, baseDirectory, "vault.pav", PrepareRestrictiveStorage)
     {
     }
 
@@ -31,15 +31,44 @@ public sealed class DpapiVaultStore : IVaultStore
         ILogger<DpapiVaultStore> logger,
         string? baseDirectory,
         Action<string> prepareRestrictiveStorage)
+        : this(logger, baseDirectory, "vault.pav", prepareRestrictiveStorage)
+    {
+    }
+
+    internal DpapiVaultStore(
+        ILogger<DpapiVaultStore> logger,
+        string? baseDirectory,
+        string vaultFileName)
+        : this(logger, baseDirectory, vaultFileName, PrepareRestrictiveStorage)
+    {
+    }
+
+    internal DpapiVaultStore(
+        ILogger<DpapiVaultStore> logger,
+        string? baseDirectory,
+        string vaultFileName,
+        Action<string> prepareRestrictiveStorage)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(prepareRestrictiveStorage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(vaultFileName);
+        if (!string.Equals(Path.GetFileName(vaultFileName), vaultFileName, StringComparison.Ordinal) ||
+            !vaultFileName.All(
+                character =>
+                    char.IsAsciiLetterOrDigit(character) ||
+                    character is '-' or '_' or '.') ||
+            !string.Equals(Path.GetExtension(vaultFileName), ".pav", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                "The vault file name must be a local .pav file name.",
+                nameof(vaultFileName));
+        }
 
         _logger = logger;
         _prepareRestrictiveStorage = prepareRestrictiveStorage;
         string directory = baseDirectory ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PersonalAuthenticator");
-        VaultPath = Path.Combine(directory, "vault.pav");
+        VaultPath = Path.Combine(directory, vaultFileName);
     }
 
     public string VaultPath { get; }

@@ -55,7 +55,9 @@ public partial class App : Application
         services.AddSingleton<IProvisioningUriParser, ProvisioningUriParser>();
         services.AddSingleton<ITotpGenerator, OtpNetTotpGenerator>();
         services.AddSingleton<DuplicateDetector>();
-        services.AddSingleton<IVaultStore, DpapiVaultStore>();
+        services.AddSingleton<VersionedVaultStore>();
+        services.AddSingleton<IVaultStore>(
+            provider => provider.GetRequiredService<VersionedVaultStore>());
         services.AddSingleton<IVaultService, VaultService>();
         services.AddSingleton<IBackupService, PasswordBackupService>();
         services.AddSingleton<IQrCodeDecoder, LocalQrCodeDecoder>();

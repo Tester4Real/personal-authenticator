@@ -47,6 +47,16 @@ public sealed class ProvisioningUriParserTests
     }
 
     [Fact]
+    public void Parse_EncodedColonInsideLabelParts_DoesNotConfuseTheSeparator()
+    {
+        using ParsedTotpProvisioning parsed = _parser.Parse(
+            $"otpauth://totp/Example%3ATeam:alice%3Aprimary?secret={RfcSha1Secret}&issuer=Example%3ATeam");
+
+        Assert.Equal("Example:Team", parsed.Issuer);
+        Assert.Equal("alice:primary", parsed.AccountName);
+    }
+
+    [Fact]
     public void ParseManual_LowercaseAndWhitespaceSecret_IsAccepted()
     {
         using ParsedTotpProvisioning parsed = _parser.ParseManual(

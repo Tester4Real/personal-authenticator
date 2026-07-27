@@ -51,8 +51,8 @@ public sealed class ProvisioningUriParser : IProvisioningUriParser
             throw Invalid("The setup URI contains unsupported components.");
         }
 
-        string label = DecodeComponent(uri.AbsolutePath.TrimStart('/'), "label").Trim();
-        if (string.IsNullOrWhiteSpace(label))
+        string encodedLabel = uri.AbsolutePath.TrimStart('/');
+        if (string.IsNullOrWhiteSpace(encodedLabel))
         {
             throw Invalid("The account label is empty.");
         }
@@ -65,7 +65,7 @@ public sealed class ProvisioningUriParser : IProvisioningUriParser
             throw Invalid("The setup URI does not contain a secret.");
         }
 
-        (string? labelIssuer, string accountName) = ParseLabel(label);
+        (string? labelIssuer, string accountName) = ParseEncodedLabel(encodedLabel);
         string? queryIssuer = query.TryGetValue("issuer", out string? value)
             ? DecodeComponent(value, "issuer").Trim()
             : null;
@@ -182,6 +182,25 @@ public sealed class ProvisioningUriParser : IProvisioningUriParser
         string issuer = ValidateLabelPart(label[..separatorIndex], "issuer");
         string accountName = ValidateLabelPart(label[(separatorIndex + 1)..], "account name");
         return (issuer, accountName);
+    }
+
+    private static (string? Issuer, string AccountName) ParseEncodedLabel(string encodedLabel)
+    {
+        int literalSeparatorIndex = encodedLabel.IndexOf(':');
+        if (literalSeparatorIndex < 0)
+        {
+            return ParseLabel(DecodeComponent(encodedLabel, "label").Trim());
+        }
+
+        string issuer = DecodeComponent(
+            encodedLabel[..literalSeparatorIndex],
+            "issuer");
+        string accountName = DecodeComponent(
+            encodedLabel[(literalSeparatorIndex + 1)..],
+            "account name");
+        return (
+            ValidateLabelPart(issuer, "issuer"),
+            ValidateLabelPart(accountName, "account name"));
     }
 
     private static string ValidateLabelPart(string value, string name)
