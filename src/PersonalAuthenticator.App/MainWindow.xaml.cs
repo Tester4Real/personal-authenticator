@@ -98,6 +98,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         _timer = DispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(1);
+        _timer.IsRepeating = true;
         _timer.Tick += OnTimerTick;
         ViewModel.NotificationRequested += OnNotificationRequested;
         _lockMonitor.LockRequested += OnSystemLockRequested;
