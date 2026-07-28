@@ -261,6 +261,58 @@
         </ScrollViewer>
       </TabViewItem>
 
+      <TabViewItem Header="Devices &amp; keys" IsClosable="False">
+        <ScrollViewer Padding="8,16,8,8">
+          <StackPanel Spacing="12">
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="Revocation rejects future operations from that device. It cannot erase secrets already copied to the device. Also revoke that device's fine-grained token in GitHub settings."
+                Severity="Warning" />
+            <ListView
+                x:Name="DevicesList"
+                DisplayMemberPath="DisplayName"
+                Header="Authorised Windows devices"
+                MinHeight="130" />
+            <TextBox x:Name="DeviceNameBox" Header="New device name" MaxLength="80" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Click="RenameDeviceButton_Click" Content="Rename selected" />
+              <Button Click="RevokeDeviceButton_Click" Content="Revoke selected" />
+              <Button Click="RefreshDevicesButton_Click" Content="Refresh" />
+            </StackPanel>
+            <TextBlock x:Name="DeviceDetailsText" TextWrapping="Wrap" />
+            <TextBlock FontWeight="SemiBold" Text="Verified key rotation" />
+            <TextBox x:Name="SecurityRecoveryDirectoryBox" Header="Recovery-A/B directory" />
+            <PasswordBox
+                x:Name="SecurityRecoveryPasswordBox"
+                Header="Recovery password"
+                PasswordChar="●" />
+            <Button
+                Click="RotateKeysButton_Click"
+                Content="Rotate vault key epoch…"
+                HorizontalAlignment="Left" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="Rotation writes and verifies a separate vault and Recovery-A/B before atomic activation. Existing encrypted files remain available for rollback. If GitHub sync is configured, replace its remote generation afterward."
+                Severity="Informational" />
+            <TextBlock FontWeight="SemiBold" Text="Advanced permanent purge" />
+            <TextBox x:Name="PurgeAccountIdBox" Header="Archived account ID" />
+            <TextBox x:Name="PurgeConfirmationBox" Header="Type PURGE" />
+            <Button
+                Click="PurgeAccountButton_Click"
+                Content="Purge archived account…"
+                HorizontalAlignment="Left" />
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="Purge creates a clean local key epoch excluding the account. Old devices, Git history, recovery files and external backups may retain encrypted copies. Physical erasure is not guaranteed. Reset or revoke the website's 2FA secret too."
+                Severity="Warning" />
+            <TextBlock x:Name="SecurityEpochText" TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabViewItem>
+
       <TabViewItem Header="About" IsClosable="False">
         <ScrollViewer Padding="8,16,8,8">
           <StackPanel Spacing="10">

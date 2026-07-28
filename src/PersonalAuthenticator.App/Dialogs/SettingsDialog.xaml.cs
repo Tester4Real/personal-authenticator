@@ -15,6 +15,8 @@ public sealed partial class SettingsDialog : ContentDialog
     private readonly IRecoveryService _recoveryService;
     private readonly ILocalFolderSyncService _syncService;
     private readonly IGitHubSyncService _githubSyncService;
+    private readonly ISecurityLifecycleService _securityLifecycle;
+    private readonly IUserVerificationService _userVerification;
     private readonly nint _windowHandle;
 
     public SettingsDialog(
@@ -23,6 +25,8 @@ public sealed partial class SettingsDialog : ContentDialog
         IRecoveryService recoveryService,
         ILocalFolderSyncService syncService,
         IGitHubSyncService githubSyncService,
+        ISecurityLifecycleService securityLifecycle,
+        IUserVerificationService userVerification,
         nint windowHandle)
     {
         InitializeComponent();
@@ -31,11 +35,14 @@ public sealed partial class SettingsDialog : ContentDialog
         _recoveryService = recoveryService;
         _syncService = syncService;
         _githubSyncService = githubSyncService;
+        _securityLifecycle = securityLifecycle;
+        _userVerification = userVerification;
         _windowHandle = windowHandle;
         PopulateSettings(viewModel.Settings);
         PopulateMigrationState();
         _ = RefreshSyncStatusAsync();
         _ = RefreshGitHubStatusAsync();
+        _ = RefreshDevicesAsync();
     }
 
     private async void Dialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
@@ -765,6 +772,195 @@ public sealed partial class SettingsDialog : ContentDialog
         GitHubSyncPasswordBox.Password = string.Empty;
     }
 
+    private async Task RefreshDevicesAsync()
+    {
+        try
+        {
+            IReadOnlyList<AuthorisedDeviceInfo> devices =
+                await _securityLifecycle.GetDevicesAsync(CancellationToken.None);
+            DevicesList.ItemsSource = devices;
+            SecurityEpochStatus epoch =
+                await _securityLifecycle.GetSecurityEpochStatusAsync(
+                    CancellationToken.None);
+            DeviceDetailsText.Text =
+                $"{devices.Count(device => !device.IsRevoked)} authorised · " +
+                $"{devices.Count(device => device.IsRevoked)} revoked · select a device to rename or revoke.";
+            SecurityEpochText.Text =
+                $"Active key epoch: {epoch.ActiveEpoch}" +
+                (epoch.RotationPending ? $" · pending epoch: {epoch.PendingEpoch}" : string.Empty) +
+                (epoch.PurgePending ? $" · purge pending for {epoch.PurgeAccountId}" : string.Empty) +
+                (string.IsNullOrWhiteSpace(epoch.LastFailure)
+                    ? string.Empty
+                    : $" · last interruption: {epoch.LastFailure}");
+        }
+        catch (Exception exception)
+        {
+            DeviceDetailsText.Text = exception is SafeApplicationException
+                ? exception.Message
+                : "Device security state could not be read.";
+        }
+    }
+
+    private async void RefreshDevicesButton_Click(
+        object sender,
+        RoutedEventArgs args) =>
+        await RefreshDevicesAsync();
+
+    private async void RenameDeviceButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (DevicesList.SelectedItem is not AuthorisedDeviceInfo device)
+        {
+            ShowBackupStatus("Select a device first.", isError: true);
+            return;
+        }
+
+        try
+        {
+            await _securityLifecycle.RenameDeviceAsync(
+                device.DeviceId,
+                DeviceNameBox.Text,
+                CancellationToken.None);
+            DeviceNameBox.Text = string.Empty;
+            ShowBackupStatus("Device name updated.", isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The device could not be renamed.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshDevicesAsync();
+        }
+    }
+
+    private async void RevokeDeviceButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (DevicesList.SelectedItem is not AuthorisedDeviceInfo device)
+        {
+            ShowBackupStatus("Select a device first.", isError: true);
+            return;
+        }
+
+        try
+        {
+            if (!await _userVerification.RequestAsync(
+                    "Verify your identity to revoke this Windows device",
+                    CancellationToken.None))
+            {
+                return;
+            }
+
+            await _securityLifecycle.RevokeDeviceAsync(
+                device.DeviceId,
+                CancellationToken.None);
+            ShowBackupStatus(
+                "Future operations from this device are rejected. Revoke its GitHub token separately; copied secrets cannot be erased remotely.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "The device could not be revoked.",
+                isError: true);
+        }
+        finally
+        {
+            await RefreshDevicesAsync();
+        }
+    }
+
+    private async void RotateKeysButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        try
+        {
+            if (!await _userVerification.RequestAsync(
+                    "Verify your identity to rotate authenticator encryption keys",
+                    CancellationToken.None))
+            {
+                return;
+            }
+
+            await _securityLifecycle.RotateKeysAsync(
+                SecurityRecoveryDirectoryBox.Text.Trim(),
+                SecurityRecoveryPasswordBox.Password.AsMemory(),
+                CancellationToken.None);
+            ShowBackupStatus(
+                "A new vault key epoch and verified Recovery-A/B bundle were activated. Previous encrypted files remain for rollback.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "Key rotation did not activate. The previous epoch remains active.",
+                isError: true);
+        }
+        finally
+        {
+            SecurityRecoveryPasswordBox.Password = string.Empty;
+            await RefreshDevicesAsync();
+        }
+    }
+
+    private async void PurgeAccountButton_Click(
+        object sender,
+        RoutedEventArgs args)
+    {
+        try
+        {
+            if (!Guid.TryParse(PurgeAccountIdBox.Text, out Guid accountId))
+            {
+                throw new SafeApplicationException(
+                    "Security.PurgeAccountInvalid",
+                    "Enter a valid archived account ID.");
+            }
+
+            if (!await _userVerification.RequestAsync(
+                    "Verify your identity to permanently purge this archived account",
+                    CancellationToken.None))
+            {
+                return;
+            }
+
+            await _securityLifecycle.PurgeAccountAsync(
+                accountId,
+                PurgeConfirmationBox.Text,
+                SecurityRecoveryDirectoryBox.Text.Trim(),
+                SecurityRecoveryPasswordBox.Password.AsMemory(),
+                CancellationToken.None);
+            PurgeConfirmationBox.Text = string.Empty;
+            ShowBackupStatus(
+                "The account was excluded from a clean local key epoch. Replace the remote generation and retire old recovery files where appropriate. Physical erasure is not guaranteed.",
+                isError: false);
+        }
+        catch (Exception exception)
+        {
+            ShowBackupStatus(
+                exception is SafeApplicationException
+                    ? exception.Message
+                    : "Permanent purge did not activate. The previous epoch remains active.",
+                isError: true);
+        }
+        finally
+        {
+            SecurityRecoveryPasswordBox.Password = string.Empty;
+            await RefreshDevicesAsync();
+        }
+    }
+
     private void ClearRecoveryPasswords()
     {
         RecoveryPasswordBox.Password = string.Empty;
@@ -777,6 +973,7 @@ public sealed partial class SettingsDialog : ContentDialog
         ClearRecoveryPasswords();
         SyncPasswordBox.Password = string.Empty;
         ClearGitHubSecrets();
+        SecurityRecoveryPasswordBox.Password = string.Empty;
     }
 
     private void ClearPasswords()
