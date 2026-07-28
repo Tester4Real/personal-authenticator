@@ -102,6 +102,54 @@ public sealed class SettingsResponsiveLayoutTests
     }
 
     [Fact]
+    public void TechnicalAndDangerousControls_AreCollapsedByDefault()
+    {
+        XDocument document = XDocument.Load(FindSettingsXaml());
+        XElement root = Assert.IsType<XElement>(document.Root);
+        string[] technicalControls =
+        [
+            "ClipboardDelayBox",
+            "BackupPasswordBox",
+            "ImportModeBox",
+            "RecoveryPasswordBox",
+            "GitHubOwnerBox",
+            "GitHubBranchBox",
+            "SyncFolderBox",
+            "SecurityRecoveryDirectoryBox",
+            "PurgeAccountIdBox",
+        ];
+
+        foreach (string controlName in technicalControls)
+        {
+            XElement control = FindNamed(root, controlName);
+            XElement? expander = control.Ancestors()
+                .FirstOrDefault(element => element.Name.LocalName == "Expander");
+            Assert.NotNull(expander);
+            Assert.Equal("False", Attribute(expander, "IsExpanded"));
+        }
+
+        string[] expectedExpanders =
+        [
+            "Security & clipboard",
+            "Encrypted backup",
+            "Advanced restore options",
+            "Recovery A/B",
+            "GitHub sync",
+            "Advanced repository options",
+            "Maintenance",
+            "Local-folder sync (advanced)",
+            "Conflict resolution",
+            "Key rotation (advanced)",
+            "Permanent purge (dangerous)",
+        ];
+        string[] actualExpanders = root.Descendants()
+            .Where(element => element.Name.LocalName == "Expander")
+            .Select(element => Attribute(element, "Header"))
+            .ToArray();
+        Assert.Equal(expectedExpanders, actualExpanders);
+    }
+
+    [Fact]
     public void WarningsStatusAndDeviceEmptyState_CannotClipSilently()
     {
         XDocument document = XDocument.Load(FindSettingsXaml());

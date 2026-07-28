@@ -50,30 +50,29 @@
             <ToggleSwitch x:Name="LockWindowsToggle" Header="Lock when Windows locks or suspends" />
             <ToggleSwitch x:Name="HideCodesToggle" Header="Hide codes until revealed" />
             <ToggleSwitch x:Name="StartUnlockedToggle" Header="Try to unlock on launch" />
-            <Border
-                Height="1"
-                Margin="0,8"
-                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Security &amp; privacy" />
-            <NumberBox
-                x:Name="ClipboardDelayBox"
-                Header="Clear copied codes after (seconds)"
-                Maximum="300"
-                Minimum="5"
-                SmallChange="5" />
-            <ToggleSwitch
-                x:Name="VerificationToggle"
-                Header="Require Windows user verification before revealing or copying codes" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Informational">
-              <TextBlock Text="Windows Hello is a user-presence check. DPAPI still performs vault encryption. If Hello is unavailable, Windows account protection remains and the app will not lock you out." TextWrapping="Wrap" />
-            </InfoBar>
-            <TextBlock
-                Text="Clipboard clearing only reduces exposure time. Other software can still read a code while it is present."
-                TextWrapping="Wrap" />
+            <Expander Header="Security &amp; clipboard" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="14">
+                <NumberBox
+                    x:Name="ClipboardDelayBox"
+                    Header="Clear copied codes after (seconds)"
+                    Maximum="300"
+                    Minimum="5"
+                    SmallChange="5" />
+                <ToggleSwitch
+                    x:Name="VerificationToggle"
+                    Header="Verify with Windows before revealing or copying codes" />
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Informational">
+                  <TextBlock Text="Windows verification confirms that you are present. Windows account protection continues to encrypt the vault." TextWrapping="Wrap" />
+                </InfoBar>
+                <TextBlock
+                    Text="Clipboard clearing reduces exposure time, but other software can still read a code while it is copied."
+                    TextWrapping="Wrap" />
+              </StackPanel>
+            </Expander>
           </StackPanel>
         </ScrollViewer>
       </Grid>
@@ -97,79 +96,80 @@
                 Click="UpgradeVaultButton_Click"
                 Content="Upgrade to v2…"
                 HorizontalAlignment="Left" />
-            <Border
-                Height="1"
-                Margin="0,8"
-                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Encrypted backup" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Warning">
-              <TextBlock Text="If you lose both this password and your service recovery codes, your accounts may be unrecoverable." TextWrapping="Wrap" />
-            </InfoBar>
-            <PasswordBox
-                x:Name="BackupPasswordBox"
-                Header="Backup password (12+ characters)"
-                PasswordChar="●" />
-            <PasswordBox
-                x:Name="ConfirmPasswordBox"
-                Header="Confirm backup password"
-                PasswordChar="●" />
-            <StackPanel Spacing="8" HorizontalAlignment="Left">
-              <Button Click="ExportButton_Click" Content="Export encrypted backup…" />
-              <Button Click="ImportButton_Click" Content="Import encrypted backup…" />
-            </StackPanel>
-            <ComboBox
-                x:Name="ImportModeBox"
-                Header="Restore behaviour"
-                SelectedIndex="0">
-              <ComboBoxItem Content="Merge and skip duplicates" />
-              <ComboBoxItem Content="Merge and replace matching accounts" />
-              <ComboBoxItem Content="Merge and keep duplicates" />
-              <ComboBoxItem Content="Replace current vault exactly" />
-            </ComboBox>
-            <Border
-                Height="1"
-                Margin="0,8"
-                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Recovery A/B" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Informational">
-              <TextBlock Text="Recovery uses alternating encrypted A/B files. A new slot is fully decrypted and every record is verified before it becomes the latest verified recovery. Keep the password somewhere separate." TextWrapping="Wrap" />
-            </InfoBar>
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Warning">
-              <TextBlock Text="Restoring creates and verifies a new local vault. The current vault and rollback selector remain unchanged until activation, and the old vault is never deleted automatically." TextWrapping="Wrap" />
-            </InfoBar>
-            <PasswordBox
-                x:Name="RecoveryPasswordBox"
-                Header="Recovery password (12+ characters)"
-                PasswordChar="●" />
-            <PasswordBox
-                x:Name="ConfirmRecoveryPasswordBox"
-                Header="Confirm recovery password"
-                PasswordChar="●" />
-            <StackPanel Spacing="8" HorizontalAlignment="Left">
-              <Button Click="CreateRecoveryButton_Click" Content="Create next A/B recovery…" />
-              <Button Click="VerifyRecoveryButton_Click" Content="Verify recovery…" />
-              <Button Click="RestoreRecoveryButton_Click" Content="Restore recovery…" />
-            </StackPanel>
-            <Button
-                Click="RefreshRecoveryHealthButton_Click"
-                Content="Refresh recovery health"
-                HorizontalAlignment="Left" />
-            <TextBlock
-                x:Name="RecoveryHealthText"
-                Text="Recovery health has not been checked."
-                TextWrapping="Wrap" />
+            <Expander Header="Encrypted backup" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="12">
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Warning">
+                  <TextBlock Text="If you lose both this password and your service recovery codes, your accounts may be unrecoverable." TextWrapping="Wrap" />
+                </InfoBar>
+                <PasswordBox
+                    x:Name="BackupPasswordBox"
+                    Header="Backup password (12+ characters)"
+                    PasswordChar="●" />
+                <PasswordBox
+                    x:Name="ConfirmPasswordBox"
+                    Header="Confirm backup password"
+                    PasswordChar="●" />
+                <StackPanel Spacing="8" HorizontalAlignment="Left">
+                  <Button Click="ExportButton_Click" Content="Export encrypted backup…" />
+                  <Button Click="ImportButton_Click" Content="Import encrypted backup…" />
+                </StackPanel>
+                <Expander Header="Advanced restore options" IsExpanded="False">
+                  <ComboBox
+                      x:Name="ImportModeBox"
+                      Margin="0,8,0,0"
+                      Header="Restore behaviour"
+                      SelectedIndex="0">
+                    <ComboBoxItem Content="Merge and skip duplicates" />
+                    <ComboBoxItem Content="Merge and replace matching accounts" />
+                    <ComboBoxItem Content="Merge and keep duplicates" />
+                    <ComboBoxItem Content="Replace current vault exactly" />
+                  </ComboBox>
+                </Expander>
+              </StackPanel>
+            </Expander>
+            <Expander Header="Recovery A/B" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="12">
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Informational">
+                  <TextBlock Text="Recovery uses two alternating encrypted files. A new file is fully verified before it becomes the latest recovery." TextWrapping="Wrap" />
+                </InfoBar>
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Warning">
+                  <TextBlock Text="Restoring verifies a new local vault before activation. Existing vault files are never deleted automatically." TextWrapping="Wrap" />
+                </InfoBar>
+                <PasswordBox
+                    x:Name="RecoveryPasswordBox"
+                    Header="Recovery password (12+ characters)"
+                    PasswordChar="●" />
+                <PasswordBox
+                    x:Name="ConfirmRecoveryPasswordBox"
+                    Header="Confirm recovery password"
+                    PasswordChar="●" />
+                <StackPanel Spacing="8" HorizontalAlignment="Left">
+                  <Button Click="CreateRecoveryButton_Click" Content="Create recovery…" />
+                  <Button Click="VerifyRecoveryButton_Click" Content="Verify recovery…" />
+                  <Button Click="RestoreRecoveryButton_Click" Content="Restore recovery…" />
+                </StackPanel>
+                <Button
+                    Click="RefreshRecoveryHealthButton_Click"
+                    Content="Check recovery health"
+                    HorizontalAlignment="Left" />
+                <TextBlock
+                    x:Name="RecoveryHealthText"
+                    Text="Recovery health has not been checked."
+                    TextWrapping="Wrap" />
+              </StackPanel>
+            </Expander>
           </StackPanel>
         </ScrollViewer>
       </Grid>
@@ -177,112 +177,139 @@
       <Grid x:Name="SyncPage" Visibility="Collapsed">
         <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="12">
-            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Local-folder sync" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Informational">
-              <TextBlock Text="Optional local-folder sync is encrypted and works offline. Use a folder shared by your Windows installations." TextWrapping="Wrap" />
-            </InfoBar>
-            <TextBox
-                x:Name="SyncFolderBox"
-                Header="Local sync folder"
-                IsReadOnly="True"
-                PlaceholderText="Choose a folder…" />
-            <Button
-                Click="ChooseSyncFolderButton_Click"
-                Content="Choose folder…"
-                HorizontalAlignment="Left" />
-            <PasswordBox
-                x:Name="SyncPasswordBox"
-                Header="Sync password (12+ characters)"
-                PasswordChar="●" />
-            <StackPanel Spacing="8" HorizontalAlignment="Left">
-              <Button Click="ConfigureSyncButton_Click" Content="Configure" />
-              <Button Click="SyncNowButton_Click" Content="Sync now" />
-              <Button Click="RefreshSyncButton_Click" Content="Refresh status" />
-            </StackPanel>
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Sync" />
             <TextBlock
-                x:Name="SyncStatusText"
-                Text="Sync status has not been checked."
+                Text="Sync is optional. GitHub is the normal choice for multiple Windows installations; local-folder sync is available for advanced testing."
                 TextWrapping="Wrap" />
-            <TextBlock FontWeight="SemiBold" Text="Unresolved conflicts" />
-            <ComboBox
-                x:Name="ConflictBox"
-                DisplayMemberPath="Description"
-                Header="Conflict"
-                HorizontalAlignment="Stretch" />
-            <ComboBox
-                x:Name="ConflictResolutionBox"
-                Header="Resolution"
-                SelectedIndex="0">
-              <ComboBoxItem Content="Keep version A" />
-              <ComboBoxItem Content="Keep version B" />
-              <ComboBoxItem Content="Keep both" />
-              <ComboBoxItem Content="Separate accounts" />
-            </ComboBox>
-            <Button
-                Click="ResolveConflictButton_Click"
-                Content="Resolve selected conflict"
-                HorizontalAlignment="Left" />
-            <TextBlock
-                Text="Secret conflicts preserve every encrypted secret version until you explicitly resolve them."
-                TextWrapping="Wrap" />
-            <Border
-                Height="1"
-                Margin="0,8"
-                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-            <TextBlock FontSize="20" FontWeight="SemiBold" Text="GitHub sync" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Informational">
-              <TextBlock Text="GitHub sync is optional. Use a private repository and a fine-grained token limited to that repository with Contents read/write access. Never paste the token into source code or support messages." TextWrapping="Wrap" />
-            </InfoBar>
-            <TextBox x:Name="GitHubOwnerBox" Header="Repository owner" />
-            <TextBox x:Name="GitHubRepositoryBox" Header="Private repository name" />
-            <TextBox
-                x:Name="GitHubBranchBox"
-                Header="Dedicated sync branch"
-                Text="personal-authenticator-sync" />
-            <TextBox
-                x:Name="GitHubPathBox"
-                Header="Dedicated repository path"
-                Text=".personal-authenticator" />
-            <PasswordBox
-                x:Name="GitHubTokenBox"
-                Header="Fine-grained repository token"
-                PasswordChar="●" />
-            <PasswordBox
-                x:Name="GitHubSyncPasswordBox"
-                Header="Sync encryption password (12+ characters)"
-                PasswordChar="●" />
-            <ToggleSwitch
-                x:Name="GitHubBackgroundToggle"
-                Header="Background sync every 15 minutes" />
-            <StackPanel Spacing="8" HorizontalAlignment="Left">
-              <Button Click="ConfigureGitHubButton_Click" Content="Connect or replace token" />
-              <Button Click="TestGitHubButton_Click" Content="Test connection" />
-              <Button Click="SyncGitHubButton_Click" Content="Sync now" />
-            </StackPanel>
-            <StackPanel Spacing="8" HorizontalAlignment="Left">
-              <Button Click="ReplaceGitHubButton_Click" Content="Replace repository…" />
-              <Button Click="RepairGitHubButton_Click" Content="Remote repair" />
-              <Button Click="ForgetGitHubButton_Click" Content="Disable and forget credentials" />
-            </StackPanel>
-            <TextBlock
-                x:Name="GitHubStatusText"
-                Text="GitHub sync status has not been checked."
-                TextWrapping="Wrap" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Warning">
-              <TextBlock Text="A GitHub failure never deletes local accounts. Repository replacement retains the old configuration as a disabled fallback and never deletes the old repository." TextWrapping="Wrap" />
-            </InfoBar>
+            <Expander Header="GitHub sync" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="12">
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Informational">
+                  <TextBlock Text="Use a private repository and a repository-limited token. Encrypted vault data remains protected by your separate sync password." TextWrapping="Wrap" />
+                </InfoBar>
+                <TextBlock
+                    x:Name="GitHubStatusText"
+                    Text="GitHub sync status has not been checked."
+                    TextWrapping="Wrap" />
+                <TextBox x:Name="GitHubOwnerBox" Header="GitHub account" />
+                <TextBox x:Name="GitHubRepositoryBox" Header="Private repository" />
+                <PasswordBox
+                    x:Name="GitHubTokenBox"
+                    Header="Repository access token"
+                    PasswordChar="●" />
+                <PasswordBox
+                    x:Name="GitHubSyncPasswordBox"
+                    Header="Sync encryption password (12+ characters)"
+                    PasswordChar="●" />
+                <ToggleSwitch
+                    x:Name="GitHubBackgroundToggle"
+                    Header="Sync automatically every 15 minutes" />
+                <StackPanel Spacing="8" HorizontalAlignment="Left">
+                  <Button Click="ConfigureGitHubButton_Click" Content="Connect GitHub" />
+                  <Button Click="SyncGitHubButton_Click" Content="Sync now" />
+                </StackPanel>
+                <Expander Header="Advanced repository options" IsExpanded="False">
+                  <StackPanel Margin="0,8,0,0" Spacing="12">
+                    <TextBox
+                        x:Name="GitHubBranchBox"
+                        Header="Sync branch"
+                        Text="personal-authenticator-sync" />
+                    <TextBox
+                        x:Name="GitHubPathBox"
+                        Header="Repository folder"
+                        Text=".personal-authenticator" />
+                    <Button
+                        Click="TestGitHubButton_Click"
+                        Content="Test connection"
+                        HorizontalAlignment="Left" />
+                  </StackPanel>
+                </Expander>
+                <Expander Header="Maintenance" IsExpanded="False">
+                  <StackPanel Margin="0,8,0,0" Spacing="12">
+                    <Button
+                        Click="ReplaceGitHubButton_Click"
+                        Content="Replace repository…"
+                        HorizontalAlignment="Left" />
+                    <Button
+                        Click="RepairGitHubButton_Click"
+                        Content="Repair remote data"
+                        HorizontalAlignment="Left" />
+                    <Button
+                        Click="ForgetGitHubButton_Click"
+                        Content="Disable sync and forget credentials"
+                        HorizontalAlignment="Left" />
+                    <InfoBar
+                        HorizontalContentAlignment="Stretch"
+                        IsClosable="False"
+                        IsOpen="True"
+                        Severity="Warning">
+                      <TextBlock Text="GitHub failures never delete local accounts. Replacing a repository keeps the previous configuration as a disabled fallback." TextWrapping="Wrap" />
+                    </InfoBar>
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </Expander>
+            <Expander Header="Local-folder sync (advanced)" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="12">
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Informational">
+                  <TextBlock Text="Local-folder sync is encrypted and works offline. It is mainly intended for testing or a folder already shared between Windows installations." TextWrapping="Wrap" />
+                </InfoBar>
+                <TextBox
+                    x:Name="SyncFolderBox"
+                    Header="Shared folder"
+                    IsReadOnly="True"
+                    PlaceholderText="Choose a folder…" />
+                <Button
+                    Click="ChooseSyncFolderButton_Click"
+                    Content="Choose folder…"
+                    HorizontalAlignment="Left" />
+                <PasswordBox
+                    x:Name="SyncPasswordBox"
+                    Header="Sync password (12+ characters)"
+                    PasswordChar="●" />
+                <StackPanel Spacing="8" HorizontalAlignment="Left">
+                  <Button Click="ConfigureSyncButton_Click" Content="Configure local sync" />
+                  <Button Click="SyncNowButton_Click" Content="Sync now" />
+                  <Button Click="RefreshSyncButton_Click" Content="Refresh status" />
+                </StackPanel>
+                <TextBlock
+                    x:Name="SyncStatusText"
+                    Text="Sync status has not been checked."
+                    TextWrapping="Wrap" />
+                <Expander Header="Conflict resolution" IsExpanded="False">
+                  <StackPanel Margin="0,8,0,0" Spacing="12">
+                    <ComboBox
+                        x:Name="ConflictBox"
+                        DisplayMemberPath="Description"
+                        Header="Conflict"
+                        HorizontalAlignment="Stretch" />
+                    <ComboBox
+                        x:Name="ConflictResolutionBox"
+                        Header="Resolution"
+                        SelectedIndex="0">
+                      <ComboBoxItem Content="Keep version A" />
+                      <ComboBoxItem Content="Keep version B" />
+                      <ComboBoxItem Content="Keep both" />
+                      <ComboBoxItem Content="Separate accounts" />
+                    </ComboBox>
+                    <Button
+                        Click="ResolveConflictButton_Click"
+                        Content="Resolve selected conflict"
+                        HorizontalAlignment="Left" />
+                    <TextBlock
+                        Text="Secret conflicts preserve every encrypted secret version until you explicitly resolve them."
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </Expander>
           </StackPanel>
         </ScrollViewer>
       </Grid>
@@ -309,45 +336,51 @@
                 x:Name="DevicesEmptyText"
                 Text="No authorised devices found."
                 TextWrapping="Wrap" />
-            <TextBox x:Name="DeviceNameBox" Header="New device name" MaxLength="80" />
+            <TextBox x:Name="DeviceNameBox" Header="Rename selected device" MaxLength="80" />
             <StackPanel Spacing="8" HorizontalAlignment="Left">
               <Button Click="RenameDeviceButton_Click" Content="Rename selected" />
               <Button Click="RevokeDeviceButton_Click" Content="Revoke selected" />
               <Button Click="RefreshDevicesButton_Click" Content="Refresh" />
             </StackPanel>
             <TextBlock x:Name="DeviceDetailsText" TextWrapping="Wrap" />
-            <TextBlock FontWeight="SemiBold" Text="Verified key rotation" />
-            <TextBox x:Name="SecurityRecoveryDirectoryBox" Header="Recovery-A/B directory" />
-            <PasswordBox
-                x:Name="SecurityRecoveryPasswordBox"
-                Header="Recovery password"
-                PasswordChar="●" />
-            <Button
-                Click="RotateKeysButton_Click"
-                Content="Rotate vault key epoch…"
-                HorizontalAlignment="Left" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Informational">
-              <TextBlock Text="Rotation writes and verifies a separate vault and Recovery-A/B before atomic activation. Existing encrypted files remain available for rollback. If GitHub sync is configured, replace its remote generation afterward." TextWrapping="Wrap" />
-            </InfoBar>
-            <TextBlock FontWeight="SemiBold" Text="Advanced permanent purge" />
-            <TextBox x:Name="PurgeAccountIdBox" Header="Archived account ID" />
-            <TextBox x:Name="PurgeConfirmationBox" Header="Type PURGE" />
-            <Button
-                Click="PurgeAccountButton_Click"
-                Content="Purge archived account…"
-                HorizontalAlignment="Left" />
-            <InfoBar
-                HorizontalContentAlignment="Stretch"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Warning">
-              <TextBlock Text="Purge creates a clean local key epoch excluding the account. Old devices, Git history, recovery files and external backups may retain encrypted copies. Physical erasure is not guaranteed. Reset or revoke the website's 2FA secret too." TextWrapping="Wrap" />
-            </InfoBar>
-            <TextBlock x:Name="SecurityEpochText" TextWrapping="Wrap" />
+            <Expander Header="Key rotation (advanced)" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="12">
+                <TextBox x:Name="SecurityRecoveryDirectoryBox" Header="Recovery folder" />
+                <PasswordBox
+                    x:Name="SecurityRecoveryPasswordBox"
+                    Header="Recovery password"
+                    PasswordChar="●" />
+                <Button
+                    Click="RotateKeysButton_Click"
+                    Content="Rotate encryption keys…"
+                    HorizontalAlignment="Left" />
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Informational">
+                  <TextBlock Text="Key rotation creates and verifies replacement vault and recovery files before activation. Existing encrypted files remain available for rollback." TextWrapping="Wrap" />
+                </InfoBar>
+                <TextBlock x:Name="SecurityEpochText" TextWrapping="Wrap" />
+              </StackPanel>
+            </Expander>
+            <Expander Header="Permanent purge (dangerous)" IsExpanded="False">
+              <StackPanel Margin="0,8,0,0" Spacing="12">
+                <TextBox x:Name="PurgeAccountIdBox" Header="Archived account ID" />
+                <TextBox x:Name="PurgeConfirmationBox" Header="Type PURGE" />
+                <Button
+                    Click="PurgeAccountButton_Click"
+                    Content="Purge archived account…"
+                    HorizontalAlignment="Left" />
+                <InfoBar
+                    HorizontalContentAlignment="Stretch"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Warning">
+                  <TextBlock Text="Old devices, Git history, recovery files and external backups may retain encrypted copies. Physical erasure is not guaranteed. Reset the website's 2FA secret too." TextWrapping="Wrap" />
+                </InfoBar>
+              </StackPanel>
+            </Expander>
           </StackPanel>
         </ScrollViewer>
       </Grid>
