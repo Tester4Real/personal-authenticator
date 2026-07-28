@@ -67,6 +67,32 @@ public sealed class Phase5GitHubSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task FirstConnection_InitializesEmptyRepositoryAndRequestedBranch()
+    {
+        var remote = new FakeGitHubRemote
+        {
+            DefaultBranch = "main",
+        };
+        remote.Branches.Clear();
+        var factory = new FakeGitHubApiClientFactory(remote);
+        using VersionedVaultStore store = CreateStore("empty-repository", factory);
+        await store.SaveAsync([], TestContext.Current.CancellationToken);
+
+        await ConfigureAsync(store, "empty");
+
+        Assert.Equal(1, remote.InitializationCount);
+        Assert.Contains("main", remote.Branches);
+        Assert.Contains("sync", remote.Branches);
+        Assert.Contains("sync", remote.CreatedBranches);
+        Assert.Contains(
+            remote.Files.Keys,
+            path => path.EndsWith("/descriptor.json", StringComparison.Ordinal));
+        GitHubSyncStatus status = await store.GetGitHubStatusAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("owner/empty@sync", status.Repository);
+    }
+
+    [Fact]
     public async Task TwoWindowsDevices_OfflineThenSync_Converge()
     {
         var remote = new FakeGitHubRemote();
@@ -499,7 +525,8 @@ public sealed class Phase5GitHubSyncTests : IDisposable
                     remote.Failure != FakeFailure.PublicRepository,
                     remote.Failure == FakeFailure.PermissionDenied
                         ? "contents:read"
-                        : "contents:write"));
+                        : "contents:write",
+                    remote.DefaultBranch));
         }
 
         public Task<GitHubRemoteFile?> GetFileAsync(
@@ -550,6 +577,13 @@ public sealed class Phase5GitHubSyncTests : IDisposable
             CancellationToken cancellationToken)
         {
             Check(cancellationToken);
+            if (!remote.Branches.Contains(branch))
+            {
+                throw new SafeApplicationException(
+                    "GitHub.BranchMissing",
+                    "The requested branch does not exist.");
+            }
+
             if (remote.Files.TryGetValue(path, out FakeFile? current))
             {
                 if (existingSha != current.Sha)
@@ -581,6 +615,61 @@ public sealed class Phase5GitHubSyncTests : IDisposable
             return Task.FromResult(new GitHubPutResult(sha, remote.Head));
         }
 
+        public Task<GitHubPutResult> InitializeEmptyRepositoryAsync(
+            string owner,
+            string repository,
+            string path,
+            ReadOnlyMemory<byte> content,
+            CancellationToken cancellationToken)
+        {
+            Check(cancellationToken);
+            if (remote.Branches.Count != 0)
+            {
+                throw new SafeApplicationException(
+                    "GitHub.RequestFailed",
+                    "The repository is not empty.");
+            }
+
+            string sha = Convert.ToHexString(SHA256.HashData(content.Span));
+            remote.Files[path] = new FakeFile(content.ToArray(), sha);
+            remote.Branches.Add(remote.DefaultBranch);
+            remote.AdvanceHead();
+            remote.InitializationCount++;
+            return Task.FromResult(new GitHubPutResult(sha, remote.Head));
+        }
+
+        public Task CreateBranchAsync(
+            string owner,
+            string repository,
+            string branch,
+            string commitSha,
+            CancellationToken cancellationToken)
+        {
+            Check(cancellationToken);
+            if (remote.Branches.Count == 0 ||
+                !string.Equals(commitSha, remote.Head, StringComparison.Ordinal) ||
+                !remote.Branches.Add(branch))
+            {
+                throw new SafeApplicationException(
+                    "GitHub.RequestFailed",
+                    "The branch could not be created.");
+            }
+
+            remote.CreatedBranches.Add(branch);
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> TryGetBranchHeadAsync(
+            string owner,
+            string repository,
+            string branch,
+            CancellationToken cancellationToken)
+        {
+            Check(cancellationToken);
+            return Task.FromResult(
+                remote.Branches.Contains(branch) ? remote.Head : null);
+        }
+
         public Task<string> GetBranchHeadAsync(
             string owner,
             string repository,
@@ -588,6 +677,13 @@ public sealed class Phase5GitHubSyncTests : IDisposable
             CancellationToken cancellationToken)
         {
             Check(cancellationToken);
+            if (!remote.Branches.Contains(branch))
+            {
+                throw new SafeApplicationException(
+                    "GitHub.BranchMissing",
+                    "The requested branch does not exist.");
+            }
+
             return Task.FromResult(remote.Head);
         }
 
@@ -646,6 +742,15 @@ public sealed class Phase5GitHubSyncTests : IDisposable
         public string CanonicalOwner { get; set; } = "owner";
 
         public string? CanonicalName { get; set; }
+
+        public string DefaultBranch { get; set; } = "sync";
+
+        public HashSet<string> Branches { get; } =
+            new(StringComparer.Ordinal) { "sync" };
+
+        public List<string> CreatedBranches { get; } = [];
+
+        public int InitializationCount { get; set; }
 
         public Dictionary<string, FakeFile> Files { get; } =
             new(StringComparer.Ordinal);

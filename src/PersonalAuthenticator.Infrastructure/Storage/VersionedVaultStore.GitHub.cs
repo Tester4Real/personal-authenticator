@@ -595,11 +595,47 @@ public sealed partial class VersionedVaultStore
             request.Repository,
             cancellationToken);
         EnsurePrivateWritable(repository);
-        string branchHead = await client.GetBranchHeadAsync(
+        string? requestedBranchHead = await client.TryGetBranchHeadAsync(
             request.Owner,
             request.Repository,
             request.Branch,
             cancellationToken);
+        bool initializeEmptyRepository = false;
+        string branchHead;
+        if (requestedBranchHead is not null)
+        {
+            branchHead = requestedBranchHead;
+        }
+        else
+        {
+            string? defaultBranchHead =
+                string.Equals(
+                    request.Branch,
+                    repository.DefaultBranch,
+                    StringComparison.Ordinal)
+                    ? null
+                    : await client.TryGetBranchHeadAsync(
+                        request.Owner,
+                        request.Repository,
+                        repository.DefaultBranch,
+                        cancellationToken);
+            if (defaultBranchHead is null)
+            {
+                initializeEmptyRepository = true;
+                branchHead = string.Empty;
+            }
+            else
+            {
+                await client.CreateBranchAsync(
+                    request.Owner,
+                    request.Repository,
+                    request.Branch,
+                    defaultBranchHead,
+                    cancellationToken);
+                branchHead = defaultBranchHead;
+            }
+        }
+
         string descriptorPath = request.PathPrefix + "/descriptor.json";
         GitHubRemoteDescriptor descriptor;
         byte[] key;
@@ -629,14 +665,41 @@ public sealed partial class VersionedVaultStore
             byte[] bytes = GitHubRemoteProtocol.SerializeDescriptor(descriptor);
             try
             {
-                await client.PutFileAsync(
-                    request.Owner,
-                    request.Repository,
-                    descriptorPath,
-                    request.Branch,
-                    bytes,
-                    existingSha: null,
-                    cancellationToken);
+                if (initializeEmptyRepository)
+                {
+                    GitHubPutResult initialized =
+                        await client.InitializeEmptyRepositoryAsync(
+                            request.Owner,
+                            request.Repository,
+                            descriptorPath,
+                            bytes,
+                            cancellationToken);
+                    branchHead = initialized.CommitSha;
+                    if (!string.Equals(
+                            request.Branch,
+                            repository.DefaultBranch,
+                            StringComparison.Ordinal))
+                    {
+                        await client.CreateBranchAsync(
+                            request.Owner,
+                            request.Repository,
+                            request.Branch,
+                            initialized.CommitSha,
+                            cancellationToken);
+                    }
+                }
+                else
+                {
+                    await client.PutFileAsync(
+                        request.Owner,
+                        request.Repository,
+                        descriptorPath,
+                        request.Branch,
+                        bytes,
+                        existingSha: null,
+                        cancellationToken);
+                }
+
                 using GitHubRemoteFile reopened =
                     await client.GetFileAsync(
                         request.Owner,

@@ -35,6 +35,26 @@ internal interface IGitHubApiClient : IAsyncDisposable
         string? existingSha,
         CancellationToken cancellationToken);
 
+    Task<GitHubPutResult> InitializeEmptyRepositoryAsync(
+        string owner,
+        string repository,
+        string path,
+        ReadOnlyMemory<byte> content,
+        CancellationToken cancellationToken);
+
+    Task CreateBranchAsync(
+        string owner,
+        string repository,
+        string branch,
+        string commitSha,
+        CancellationToken cancellationToken);
+
+    Task<string?> TryGetBranchHeadAsync(
+        string owner,
+        string repository,
+        string branch,
+        CancellationToken cancellationToken);
+
     Task<string> GetBranchHeadAsync(
         string owner,
         string repository,
@@ -61,7 +81,8 @@ internal sealed record GitHubRepositoryInfo(
     string Owner,
     string Name,
     bool IsPrivate,
-    string Permissions);
+    string Permissions,
+    string DefaultBranch);
 
 internal sealed record GitHubRemoteFile(
     byte[] Content,

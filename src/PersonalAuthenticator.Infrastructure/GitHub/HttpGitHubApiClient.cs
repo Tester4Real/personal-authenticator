@@ -71,7 +71,9 @@ internal sealed class HttpGitHubApiClient : IGitHubApiClient
                 : permissions.TryGetProperty("pull", out JsonElement pull) &&
                   pull.GetBoolean()
                     ? "contents:read"
-                    : "none");
+                    : "none",
+            root.GetProperty("default_branch").GetString() ??
+                throw InvalidResponse());
     }
 
     public async Task<GitHubRemoteFile?> GetFileAsync(
@@ -319,6 +321,81 @@ internal sealed class HttpGitHubApiClient : IGitHubApiClient
                 throw InvalidResponse());
     }
 
+    public async Task<GitHubPutResult> InitializeEmptyRepositoryAsync(
+        string owner,
+        string repository,
+        string path,
+        ReadOnlyMemory<byte> content,
+        CancellationToken cancellationToken)
+    {
+        var body = new
+        {
+            message = "Initialize encrypted authenticator sync",
+            content = Convert.ToBase64String(content.Span),
+        };
+        using HttpResponseMessage response = await SendAsync(
+            () => new HttpRequestMessage(
+                HttpMethod.Put,
+                $"repos/{Escape(owner)}/{Escape(repository)}/contents/{EscapePath(path)}")
+            {
+                Content = JsonContent.Create(body),
+            },
+            allowNotFound: false,
+            cancellationToken);
+        using JsonDocument document = await ReadJsonAsync(response, cancellationToken);
+        return new GitHubPutResult(
+            document.RootElement.GetProperty("content").GetProperty("sha").GetString() ??
+                throw InvalidResponse(),
+            document.RootElement.GetProperty("commit").GetProperty("sha").GetString() ??
+                throw InvalidResponse());
+    }
+
+    public async Task CreateBranchAsync(
+        string owner,
+        string repository,
+        string branch,
+        string commitSha,
+        CancellationToken cancellationToken)
+    {
+        var body = new
+        {
+            @ref = $"refs/heads/{branch}",
+            sha = commitSha,
+        };
+        using HttpResponseMessage response = await SendAsync(
+            () => new HttpRequestMessage(
+                HttpMethod.Post,
+                $"repos/{Escape(owner)}/{Escape(repository)}/git/refs")
+            {
+                Content = JsonContent.Create(body),
+            },
+            allowNotFound: false,
+            cancellationToken);
+    }
+
+    public async Task<string?> TryGetBranchHeadAsync(
+        string owner,
+        string repository,
+        string branch,
+        CancellationToken cancellationToken)
+    {
+        using HttpResponseMessage response = await SendAsync(
+            () => new HttpRequestMessage(
+                HttpMethod.Get,
+                $"repos/{Escape(owner)}/{Escape(repository)}/git/ref/heads/{EscapePath(branch)}"),
+            allowNotFound: true,
+            cancellationToken,
+            allowConflict: true);
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Conflict)
+        {
+            return null;
+        }
+
+        using JsonDocument document = await ReadJsonAsync(response, cancellationToken);
+        return document.RootElement.GetProperty("object").GetProperty("sha").GetString() ??
+            throw InvalidResponse();
+    }
+
     public async Task<string> GetBranchHeadAsync(
         string owner,
         string repository,
@@ -366,7 +443,8 @@ internal sealed class HttpGitHubApiClient : IGitHubApiClient
     private async Task<HttpResponseMessage> SendAsync(
         Func<HttpRequestMessage> requestFactory,
         bool allowNotFound,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowConflict = false)
     {
         for (int attempt = 0; ; attempt++)
         {
@@ -391,7 +469,8 @@ internal sealed class HttpGitHubApiClient : IGitHubApiClient
             request.Dispose();
             CaptureRateLimit(response);
             if (response.IsSuccessStatusCode ||
-                (allowNotFound && response.StatusCode == HttpStatusCode.NotFound))
+                (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) ||
+                (allowConflict && response.StatusCode == HttpStatusCode.Conflict))
             {
                 return response;
             }
