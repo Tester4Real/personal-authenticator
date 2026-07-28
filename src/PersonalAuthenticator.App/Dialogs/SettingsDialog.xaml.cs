@@ -1,14 +1,17 @@
+using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PersonalAuthenticator.App.ViewModels;
 using PersonalAuthenticator.Core.Abstractions;
 using PersonalAuthenticator.Core.Domain;
 using PersonalAuthenticator.Core.Exceptions;
+using Windows.Graphics;
 using Windows.Storage.Pickers;
 
 namespace PersonalAuthenticator.App.Dialogs;
 
-public sealed partial class SettingsDialog : ContentDialog
+public sealed partial class SettingsDialog : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly IBackupService _backupService;
@@ -26,8 +29,7 @@ public sealed partial class SettingsDialog : ContentDialog
         ILocalFolderSyncService syncService,
         IGitHubSyncService githubSyncService,
         ISecurityLifecycleService securityLifecycle,
-        IUserVerificationService userVerification,
-        nint windowHandle)
+        IUserVerificationService userVerification)
     {
         InitializeComponent();
         _viewModel = viewModel;
@@ -37,7 +39,25 @@ public sealed partial class SettingsDialog : ContentDialog
         _githubSyncService = githubSyncService;
         _securityLifecycle = securityLifecycle;
         _userVerification = userVerification;
-        _windowHandle = windowHandle;
+        _windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        SettingsRoot.RequestedTheme = viewModel.Settings.Theme switch
+        {
+            AppTheme.Light => ElementTheme.Light,
+            AppTheme.Dark => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
+        WindowId windowId = Win32Interop.GetWindowIdFromWindow(_windowHandle);
+        AppWindow appWindow = AppWindow.GetFromWindowId(windowId);
+        appWindow.Resize(new SizeInt32(900, 720));
+        if (appWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.IsResizable = true;
+            presenter.IsMaximizable = true;
+            presenter.PreferredMinimumWidth = 540;
+            presenter.PreferredMinimumHeight = 480;
+        }
+
+        SettingsNavigation.SelectedItem = SettingsNavigation.MenuItems[0];
         PopulateSettings(viewModel.Settings);
         PopulateMigrationState();
         _ = RefreshSyncStatusAsync();
@@ -45,9 +65,10 @@ public sealed partial class SettingsDialog : ContentDialog
         _ = RefreshDevicesAsync();
     }
 
-    private async void Dialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    private async void SaveSettingsButton_Click(
+        object sender,
+        RoutedEventArgs args)
     {
-        ContentDialogButtonClickDeferral deferral = args.GetDeferral();
         try
         {
             var settings = new AppSettings
@@ -67,18 +88,65 @@ public sealed partial class SettingsDialog : ContentDialog
                 StartUnlocked = StartUnlockedToggle.IsOn,
             };
             await _viewModel.SaveSettingsAsync(settings, CancellationToken.None);
+            Close();
         }
         catch (Exception exception)
         {
-            args.Cancel = true;
             ShowBackupStatus(
                 exception is SafeApplicationException ? exception.Message : "Settings could not be saved.",
                 isError: true);
         }
-        finally
+    }
+
+    private void CloseSettingsButton_Click(
+        object sender,
+        RoutedEventArgs args) =>
+        Close();
+
+    private void SettingsNavigation_SelectionChanged(
+        NavigationView sender,
+        NavigationViewSelectionChangedEventArgs args)
+    {
+        if (args.SelectedItemContainer?.Tag is not string selectedPage)
         {
-            deferral.Complete();
+            return;
         }
+
+        FrameworkElement[] pages =
+        [
+            GeneralPage,
+            SecurityPage,
+            VaultPage,
+            BackupPage,
+            RecoveryPage,
+            LocalSyncPage,
+            GitHubPage,
+            DevicesPage,
+            AboutPage,
+        ];
+        foreach (FrameworkElement page in pages)
+        {
+            page.Visibility = string.Equals(
+                page.Name,
+                selectedPage,
+                StringComparison.Ordinal)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+    }
+
+    private void SettingsRoot_SizeChanged(
+        object sender,
+        SizeChangedEventArgs args)
+    {
+        bool showFullPane = args.NewSize.Width >= 680;
+        SettingsNavigation.PaneDisplayMode = showFullPane
+            ? NavigationViewPaneDisplayMode.Left
+            : NavigationViewPaneDisplayMode.LeftMinimal;
+        SettingsNavigation.IsPaneOpen = showFullPane;
+        SettingsPages.Margin = showFullPane
+            ? new Thickness(0)
+            : new Thickness(48, 0, 0, 0);
     }
 
     private async void ExportButton_Click(object sender, RoutedEventArgs args)
@@ -779,6 +847,10 @@ public sealed partial class SettingsDialog : ContentDialog
             IReadOnlyList<AuthorisedDeviceInfo> devices =
                 await _securityLifecycle.GetDevicesAsync(CancellationToken.None);
             DevicesList.ItemsSource = devices;
+            DevicesList.Visibility =
+                devices.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            DevicesEmptyText.Visibility =
+                devices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             SecurityEpochStatus epoch =
                 await _securityLifecycle.GetSecurityEpochStatusAsync(
                     CancellationToken.None);
@@ -967,7 +1039,7 @@ public sealed partial class SettingsDialog : ContentDialog
         ConfirmRecoveryPasswordBox.Password = string.Empty;
     }
 
-    private void Dialog_Closed(ContentDialog sender, ContentDialogClosedEventArgs args)
+    private void Window_Closed(object sender, WindowEventArgs args)
     {
         ClearPasswords();
         ClearRecoveryPasswords();
@@ -984,7 +1056,7 @@ public sealed partial class SettingsDialog : ContentDialog
 
     private void ShowBackupStatus(string message, bool isError)
     {
-        SettingsStatus.Message = message;
+        SettingsStatusText.Text = message;
         SettingsStatus.Severity = isError ? InfoBarSeverity.Error : InfoBarSeverity.Success;
         SettingsStatus.IsOpen = true;
     }

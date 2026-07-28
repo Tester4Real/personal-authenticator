@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly AppWindow _appWindow;
     private DateTimeOffset _lastActivity = DateTimeOffset.UtcNow;
     private ContentDialog? _sensitiveDialog;
+    private SettingsDialog? _settingsWindow;
     private bool _initialised;
     private bool _migrationPromptShowing;
     private bool _shutdownStarted;
@@ -159,6 +160,8 @@ public sealed partial class MainWindow : Window, IDisposable
         Root.IsHitTestVisible = false;
         _timer.Stop();
         HideSensitiveDialog();
+        _settingsWindow?.Close();
+        _settingsWindow = null;
         _ = TrySetDisplayAffinity(NativeMethods.DisplayAffinityNone);
         _lifetime.Cancel();
     }
@@ -919,8 +922,14 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    private async void SettingsButton_Click(object sender, RoutedEventArgs args)
+    private void SettingsButton_Click(object sender, RoutedEventArgs args)
     {
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
         var dialog = new SettingsDialog(
             ViewModel,
             _backupService,
@@ -928,13 +937,18 @@ public sealed partial class MainWindow : Window, IDisposable
             _syncService,
             _githubSyncService,
             _securityLifecycle,
-            _userVerification,
-            _windowHandle)
+            _userVerification);
+        _settingsWindow = dialog;
+        dialog.Closed += (_, _) =>
         {
-            XamlRoot = Root.XamlRoot,
+            if (ReferenceEquals(_settingsWindow, dialog))
+            {
+                _settingsWindow = null;
+            }
+
+            ApplyTheme();
         };
-        await dialog.ShowAsync();
-        ApplyTheme();
+        dialog.Activate();
     }
 
     private async Task<bool> EnsureMigrationChoiceResolvedAsync()
