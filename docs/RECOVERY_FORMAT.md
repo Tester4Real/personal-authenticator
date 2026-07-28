@@ -51,3 +51,5 @@ An interruption while writing A leaves B unchanged. An interruption while writin
 Recovery health records the last fully verified slot, absolute file path, UTC verification time, and included vault sequence. The UI reports the exact number of later committed changes and warns at 20 changes, 30 days, a missing bundle, corrupt health state, or local sequence rollback.
 
 Restore decrypts and validates the selected bundle before creating a unique replacement SQLite database and unique DPAPI-protected root-key file. It adds encrypted recovery-history records, reopens the replacement, verifies SQLite integrity and every authenticated record, and compares all fields. Only then is the active selector atomically updated. The previous selector is retained by the atomic pointer store. The old database and root-key file are never overwritten or automatically deleted.
+
+Security-epoch rotation creates and verifies a new Recovery-A/B slot before activating the replacement pointer. Clean-epoch purge omits purged account state and old operation history. Older recovery files are not automatically deleted and may retain encrypted historical data.

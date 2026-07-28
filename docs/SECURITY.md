@@ -303,3 +303,7 @@ Before a release:
 - Test DPAPI and portable restore from clean Windows profiles/machines.
 - Review package licences and advisories, preserve `THIRD-PARTY-NOTICES.md`, and verify the Windows App SDK distribution terms documented in [DEPENDENCIES.md](DEPENDENCIES.md).
 - Sign redistributed binaries or a future MSIX without committing private keys.
+
+## Phase 6 lifecycle controls
+
+Device revocation preserves accepted historical operations but rejects unseen sequences above the recorded cut-off. It cannot remotely erase copied secrets; revoke the device token and rotate important website secrets. Vault key rotation and purge use a separately written and verified database/key generation plus verified Recovery-A/B before atomic activation. Purge is not a physical-erasure guarantee because old devices, Git history, recovery media, and backups may retain encrypted copies. See [WINDOWS_SECURITY_LIFECYCLE.md](WINDOWS_SECURITY_LIFECYCLE.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).

@@ -33,6 +33,6 @@ Remote Repair re-uploads locally verified history and verifies unknown objects; 
 
 ## Bounds and limitations
 
-Responses are capped at 32 MiB, JSON depth is capped, repository trees are capped at 100,000 blobs, and truncated Git trees are rejected rather than partially applied. Operations retain the protocol-level object and field bounds documented in `LOCAL_SYNC_PROTOCOL.md`. GitHub API retry uses bounded exponential backoff with jitter and honors `Retry-After`; rate-limit reset state is retained when GitHub supplies it.
+Responses are capped at 32 MiB and JSON depth is capped. A truncated recursive tree falls back to non-recursive traversal with strict component/path validation, depth 64, at most 10,000 trees, and at most 100,000 blobs. The complete traversal is accumulated before application; exceeding a limit rejects the entire sync. Operations retain the bounds documented in `LOCAL_SYNC_PROTOCOL.md`. Retry uses bounded exponential backoff with jitter and honors `Retry-After`.
 
 GitHub availability is not a recovery guarantee. Token expiration, repository loss, account loss, or service outages do not affect the local vault. Keep verified Recovery-A/Recovery-B bundles and provider recovery methods.

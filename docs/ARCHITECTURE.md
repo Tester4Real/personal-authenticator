@@ -194,6 +194,8 @@ Secrets, setup URIs, QR payloads, backup passwords, derived keys, and OTP codes 
 
 The Windows v2 GitHub backend is a transport over the same immutable operation log as local-folder sync. It never replaces SQLite as the source of truth. See `GITHUB_SYNC_PROTOCOL.md` for repository layout, DPAPI credential separation, verification, rollback, repair, and replacement rules.
 
+Phase 6 adds a DPAPI-protected policy sidecar for device names, revocation sequence cut-offs, active/pending key epochs, and `PurgePending`. Rotation and purge create a separate SQLite/key generation and reuse the atomic active-pointer boundary; see `WINDOWS_SECURITY_LIFECYCLE.md`.
+
 ## Why WinUI 3 and MVVM
 
 WinUI 3 supplies native Windows 11 controls, Fluent styling, Mica support, accessibility automation, high-contrast integration, title-bar customization, and modern Windows lifecycle APIs while keeping the app Windows-specific by design.

@@ -14,6 +14,8 @@ Windows v2 Phase 4 adds the schema-4 immutable encrypted operation log, transact
 
 Windows v2 Phase 5 extends verified recovery bundles with operation history and sync state, then adds optional encrypted private-repository GitHub transport, separate DPAPI token storage, durable offline upload, background/debounced sync, rollback detection, corruption quarantine, Remote Repair, and verified repository replacement.
 
+Windows v2 Phase 6 adds the Devices & keys screen, sequence-cutoff revocation enforcement, staged vault key epochs, verified Recovery-A/B rotation, advanced clean-epoch purge, bounded non-recursive Git tree fallback, token-removal verification, security fault injection, an opt-in live GitHub release test, and the final release checklist.
+
 ### Added
 
 - WinUI 3 Fluent desktop shell with Mica fallback, custom title bar, system/light/dark themes, search, favourites, account cards, empty/locked states, accessible countdown text, and InfoBar notifications
