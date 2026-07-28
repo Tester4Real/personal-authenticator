@@ -139,13 +139,115 @@ internal sealed class HttpGitHubApiClient : IGitHubApiClient
         if (document.RootElement.TryGetProperty("truncated", out JsonElement truncated) &&
             truncated.GetBoolean())
         {
-            throw new SafeApplicationException(
-                "GitHub.RemoteTooLarge",
-                "The GitHub sync tree is too large to verify safely.");
+            return await ListFilesByBoundedTraversalAsync(
+                owner,
+                repository,
+                branch,
+                pathPrefix,
+                cancellationToken);
         }
 
+        return ReadMatchingBlobs(document.RootElement, pathPrefix);
+    }
+
+    private async Task<IReadOnlyList<GitHubRemoteEntry>>
+        ListFilesByBoundedTraversalAsync(
+            string owner,
+            string repository,
+            string branch,
+            string pathPrefix,
+            CancellationToken cancellationToken)
+    {
+        const int maximumTrees = 10_000;
+        const int maximumDepth = 64;
         var result = new List<GitHubRemoteEntry>();
-        foreach (JsonElement item in document.RootElement.GetProperty("tree").EnumerateArray())
+        var pending = new Queue<(string Prefix, string Tree, int Depth)>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        pending.Enqueue((string.Empty, branch, 0));
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            (string prefix, string tree, int depth) = pending.Dequeue();
+            if (depth > maximumDepth ||
+                visited.Count >= maximumTrees ||
+                !visited.Add(tree))
+            {
+                throw RemoteTreeTooLarge();
+            }
+
+            using JsonDocument document = await GetJsonAsync(
+                $"repos/{Escape(owner)}/{Escape(repository)}/git/trees/{Escape(tree)}",
+                cancellationToken);
+            if (document.RootElement.TryGetProperty(
+                    "truncated",
+                    out JsonElement truncated) &&
+                truncated.GetBoolean())
+            {
+                throw RemoteTreeTooLarge();
+            }
+
+            foreach (JsonElement item in
+                     document.RootElement.GetProperty("tree").EnumerateArray())
+            {
+                string name = item.GetProperty("path").GetString() ??
+                    throw InvalidResponse();
+                if (name.Length is < 1 or > 255 ||
+                    name is "." or ".." ||
+                    name.Contains('/') ||
+                    name.Contains('\\'))
+                {
+                    throw new SafeApplicationException(
+                        "GitHub.InvalidRemotePath",
+                        "The GitHub tree contains an invalid path component.");
+                }
+
+                string path = prefix.Length == 0 ? name : $"{prefix}/{name}";
+                if (path.Length > 1024)
+                {
+                    throw RemoteTreeTooLarge();
+                }
+
+                string type = item.GetProperty("type").GetString() ??
+                    throw InvalidResponse();
+                if (type == "tree" && PathsMayIntersect(path, pathPrefix))
+                {
+                    pending.Enqueue(
+                        (path,
+                         item.GetProperty("sha").GetString() ??
+                         throw InvalidResponse(),
+                         depth + 1));
+                }
+                else if (type == "blob" &&
+                         path.StartsWith(
+                             pathPrefix + "/",
+                             StringComparison.Ordinal))
+                {
+                    if (result.Count >= 100_000)
+                    {
+                        throw RemoteTreeTooLarge();
+                    }
+
+                    result.Add(
+                        new GitHubRemoteEntry(
+                            path,
+                            item.GetProperty("sha").GetString() ??
+                            throw InvalidResponse(),
+                            item.TryGetProperty("size", out JsonElement size)
+                                ? size.GetInt64()
+                                : 0));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static List<GitHubRemoteEntry> ReadMatchingBlobs(
+        JsonElement root,
+        string pathPrefix)
+    {
+        var result = new List<GitHubRemoteEntry>();
+        foreach (JsonElement item in root.GetProperty("tree").EnumerateArray())
         {
             string? path = item.GetProperty("path").GetString();
             if (path is null ||
@@ -173,6 +275,16 @@ internal sealed class HttpGitHubApiClient : IGitHubApiClient
 
         return result;
     }
+
+    private static bool PathsMayIntersect(string path, string target) =>
+        target.Equals(path, StringComparison.Ordinal) ||
+        target.StartsWith(path + "/", StringComparison.Ordinal) ||
+        path.StartsWith(target + "/", StringComparison.Ordinal);
+
+    private static SafeApplicationException RemoteTreeTooLarge() =>
+        new(
+            "GitHub.RemoteTooLarge",
+            "The GitHub sync tree exceeds safe traversal limits. Nothing was partially applied.");
 
     public async Task<GitHubPutResult> PutFileAsync(
         string owner,

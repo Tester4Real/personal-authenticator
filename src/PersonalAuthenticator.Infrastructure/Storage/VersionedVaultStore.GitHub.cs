@@ -229,6 +229,13 @@ public sealed partial class VersionedVaultStore
             _githubDebounceTimer?.Dispose();
             _githubDebounceTimer = null;
             _githubCredentialStore.Delete();
+            if (_githubCredentialStore.Exists)
+            {
+                throw new SafeApplicationException(
+                    "GitHub.CredentialRemovalFailed",
+                    "Windows could not verify removal of the stored GitHub token.");
+            }
+
             _githubConfigStore.Delete();
             _githubAuthenticationStatus = null;
         }
