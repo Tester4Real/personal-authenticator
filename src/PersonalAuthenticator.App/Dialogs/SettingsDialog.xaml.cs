@@ -13,6 +13,11 @@ namespace PersonalAuthenticator.App.Dialogs;
 
 public sealed partial class SettingsDialog : Window
 {
+    private const string PersonalGitHubOwner = "Tester4Real";
+    private const string PersonalGitHubRepository = "authenticator-sync";
+    private const string PersonalGitHubBranch = "personal-authenticator-sync";
+    private const string PersonalGitHubPath = ".personal-authenticator";
+
     private readonly MainViewModel _viewModel;
     private readonly IBackupService _backupService;
     private readonly IRecoveryService _recoveryService;
@@ -650,48 +655,26 @@ public sealed partial class SettingsDialog : Window
 
     private async void ConfigureGitHubButton_Click(
         object sender,
-        RoutedEventArgs args) =>
-        await ConfigureGitHubAsync(replaceRepository: false);
-
-    private async void ReplaceGitHubButton_Click(
-        object sender,
-        RoutedEventArgs args) =>
-        await ConfigureGitHubAsync(replaceRepository: true);
-
-    private async Task ConfigureGitHubAsync(bool replaceRepository)
+        RoutedEventArgs args)
     {
         string token = GitHubTokenBox.Password;
         string syncPassword = GitHubSyncPasswordBox.Password;
         var request = new GitHubConnectionRequest(
-            GitHubOwnerBox.Text.Trim(),
-            GitHubRepositoryBox.Text.Trim(),
-            GitHubBranchBox.Text.Trim(),
-            GitHubPathBox.Text.Trim(),
+            PersonalGitHubOwner,
+            PersonalGitHubRepository,
+            PersonalGitHubBranch,
+            PersonalGitHubPath,
             GitHubBackgroundToggle.IsOn);
         try
         {
-            if (replaceRepository)
-            {
-                await _githubSyncService.ReplaceGitHubRepositoryAsync(
-                    request,
-                    token.AsMemory(),
-                    syncPassword.AsMemory(),
-                    CancellationToken.None);
-                ShowBackupStatus(
-                    "The replacement repository was uploaded, downloaded with a fresh client, verified, and activated. The previous configuration remains disabled.",
-                    isError: false);
-            }
-            else
-            {
-                await _githubSyncService.ConfigureGitHubAsync(
-                    request,
-                    token.AsMemory(),
-                    syncPassword.AsMemory(),
-                    CancellationToken.None);
-                ShowBackupStatus(
-                    "GitHub sync is connected to the verified private repository.",
-                    isError: false);
-            }
+            await _githubSyncService.ConfigureGitHubAsync(
+                request,
+                token.AsMemory(),
+                syncPassword.AsMemory(),
+                CancellationToken.None);
+            ShowBackupStatus(
+                $"GitHub sync is connected to {PersonalGitHubOwner}/{PersonalGitHubRepository}.",
+                isError: false);
         }
         catch (Exception exception)
         {
@@ -810,11 +793,13 @@ public sealed partial class SettingsDialog : Window
             GitHubSyncStatus status = await _githubSyncService.GetGitHubStatusAsync(
                 CancellationToken.None);
             GitHubBackgroundToggle.IsOn = status.IsBackgroundSyncEnabled;
+            GitHubSetupPanel.Visibility =
+                status.IsConfigured ? Visibility.Collapsed : Visibility.Visible;
+            GitHubSyncButton.IsEnabled = status.IsConfigured && status.IsEnabled;
             GitHubStatusText.Text = !status.IsConfigured
-                ? "GitHub sync is not configured."
-                : $"{status.Repository} · repository ID {status.RepositoryId} · " +
-                  $"{status.PendingOperationCount} pending · {status.RemoteHealth} · " +
-                  $"last success: {(status.LastSuccessfulSyncAtUtc.HasValue ? status.LastSuccessfulSyncAtUtc.Value.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "never")}" +
+                ? $"Not connected · repository: {PersonalGitHubOwner}/{PersonalGitHubRepository}"
+                : $"{status.Repository} · {status.PendingOperationCount} pending · " +
+                  $"last sync: {(status.LastSuccessfulSyncAtUtc.HasValue ? status.LastSuccessfulSyncAtUtc.Value.ToString("yyyy-MM-dd HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "never")}" +
                   (string.IsNullOrWhiteSpace(status.AuthenticationStatus)
                       ? string.Empty
                       : $" · {status.AuthenticationStatus}") +
@@ -824,6 +809,8 @@ public sealed partial class SettingsDialog : Window
         }
         catch (Exception exception)
         {
+            GitHubSetupPanel.Visibility = Visibility.Visible;
+            GitHubSyncButton.IsEnabled = false;
             GitHubStatusText.Text = exception is SafeApplicationException
                 ? exception.Message
                 : "GitHub sync status could not be read.";

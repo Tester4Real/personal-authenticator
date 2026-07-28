@@ -188,50 +188,40 @@
                     IsClosable="False"
                     IsOpen="True"
                     Severity="Informational">
-                  <TextBlock Text="Use a private repository and a repository-limited token. Encrypted vault data remains protected by your separate sync password." TextWrapping="Wrap" />
+                  <TextBlock Text="This personal build syncs only with the private Tester4Real/authenticator-sync repository. Repository details are already configured." TextWrapping="Wrap" />
                 </InfoBar>
                 <TextBlock
                     x:Name="GitHubStatusText"
                     Text="GitHub sync status has not been checked."
                     TextWrapping="Wrap" />
-                <TextBox x:Name="GitHubOwnerBox" Header="GitHub account" />
-                <TextBox x:Name="GitHubRepositoryBox" Header="Private repository" />
-                <PasswordBox
-                    x:Name="GitHubTokenBox"
-                    Header="Repository access token"
-                    PasswordChar="●" />
-                <PasswordBox
-                    x:Name="GitHubSyncPasswordBox"
-                    Header="Sync encryption password (12+ characters)"
-                    PasswordChar="●" />
-                <ToggleSwitch
-                    x:Name="GitHubBackgroundToggle"
-                    Header="Sync automatically every 15 minutes" />
-                <StackPanel Spacing="8" HorizontalAlignment="Left">
-                  <Button Click="ConfigureGitHubButton_Click" Content="Connect GitHub" />
-                  <Button Click="SyncGitHubButton_Click" Content="Sync now" />
+                <StackPanel x:Name="GitHubSetupPanel" Spacing="12">
+                  <PasswordBox
+                      x:Name="GitHubTokenBox"
+                      Header="Repository access token"
+                      PasswordChar="●" />
+                  <PasswordBox
+                      x:Name="GitHubSyncPasswordBox"
+                      Header="Sync encryption password (12+ characters)"
+                      PasswordChar="●" />
+                  <ToggleSwitch
+                      x:Name="GitHubBackgroundToggle"
+                      Header="Sync automatically every 15 minutes" />
+                  <Button
+                      Click="ConfigureGitHubButton_Click"
+                      Content="Connect GitHub"
+                      HorizontalAlignment="Left" />
                 </StackPanel>
-                <Expander Header="Advanced repository options" IsExpanded="False">
-                  <StackPanel Margin="0,8,0,0" Spacing="12">
-                    <TextBox
-                        x:Name="GitHubBranchBox"
-                        Header="Sync branch"
-                        Text="personal-authenticator-sync" />
-                    <TextBox
-                        x:Name="GitHubPathBox"
-                        Header="Repository folder"
-                        Text=".personal-authenticator" />
-                    <Button
-                        Click="TestGitHubButton_Click"
-                        Content="Test connection"
-                        HorizontalAlignment="Left" />
-                  </StackPanel>
-                </Expander>
+                <Button
+                    x:Name="GitHubSyncButton"
+                    Click="SyncGitHubButton_Click"
+                    Content="Sync now"
+                    HorizontalAlignment="Left"
+                    IsEnabled="False" />
                 <Expander Header="Maintenance" IsExpanded="False">
                   <StackPanel Margin="0,8,0,0" Spacing="12">
                     <Button
-                        Click="ReplaceGitHubButton_Click"
-                        Content="Replace repository…"
+                        Click="TestGitHubButton_Click"
+                        Content="Test connection"
                         HorizontalAlignment="Left" />
                     <Button
                         Click="RepairGitHubButton_Click"
@@ -246,7 +236,7 @@
                         IsClosable="False"
                         IsOpen="True"
                         Severity="Warning">
-                      <TextBlock Text="GitHub failures never delete local accounts. Replacing a repository keeps the previous configuration as a disabled fallback." TextWrapping="Wrap" />
+                      <TextBlock Text="GitHub failures never delete local accounts. Disabling sync removes the stored Windows credential but does not delete the repository." TextWrapping="Wrap" />
                     </InfoBar>
                   </StackPanel>
                 </Expander>

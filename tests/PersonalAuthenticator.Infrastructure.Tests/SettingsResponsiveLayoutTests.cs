@@ -79,7 +79,7 @@ public sealed class SettingsResponsiveLayoutTests
         Assert.NotNull(FindNamed(root, "BackupPasswordBox"));
         Assert.NotNull(FindNamed(root, "RecoveryPasswordBox"));
         Assert.NotNull(FindNamed(root, "SyncFolderBox"));
-        Assert.NotNull(FindNamed(root, "GitHubOwnerBox"));
+        Assert.NotNull(FindNamed(root, "GitHubTokenBox"));
         Assert.NotNull(FindNamed(root, "DevicesList"));
         Assert.DoesNotContain(
             root.Descendants(),
@@ -99,6 +99,26 @@ public sealed class SettingsResponsiveLayoutTests
                 .Select(attribute => attribute.Value));
         Assert.DoesNotContain("GitHub sync is not part of this phase.", visibleText);
         Assert.DoesNotContain("No analytics, telemetry, advertisements, GitHub integration", visibleText);
+
+        string[] removedRepositoryInputs =
+        [
+            "GitHubOwnerBox",
+            "GitHubRepositoryBox",
+            "GitHubBranchBox",
+            "GitHubPathBox",
+        ];
+        foreach (string inputName in removedRepositoryInputs)
+        {
+            Assert.DoesNotContain(
+                root.DescendantsAndSelf(),
+                element => AttributeOrNull(element, "Name") == inputName);
+        }
+
+        string codeBehind = File.ReadAllText(FindSettingsCodeBehind());
+        Assert.Contains("PersonalGitHubOwner = \"Tester4Real\";", codeBehind);
+        Assert.Contains("PersonalGitHubRepository = \"authenticator-sync\";", codeBehind);
+        Assert.Contains("PersonalGitHubBranch = \"personal-authenticator-sync\";", codeBehind);
+        Assert.Contains("PersonalGitHubPath = \".personal-authenticator\";", codeBehind);
     }
 
     [Fact]
@@ -112,8 +132,7 @@ public sealed class SettingsResponsiveLayoutTests
             "BackupPasswordBox",
             "ImportModeBox",
             "RecoveryPasswordBox",
-            "GitHubOwnerBox",
-            "GitHubBranchBox",
+            "GitHubTokenBox",
             "SyncFolderBox",
             "SecurityRecoveryDirectoryBox",
             "PurgeAccountIdBox",
@@ -135,7 +154,6 @@ public sealed class SettingsResponsiveLayoutTests
             "Advanced restore options",
             "Recovery A/B",
             "GitHub sync",
-            "Advanced repository options",
             "Maintenance",
             "Local-folder sync (advanced)",
             "Conflict resolution",
