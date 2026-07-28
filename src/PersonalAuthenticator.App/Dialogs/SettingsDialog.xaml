@@ -24,20 +24,17 @@
         PaneDisplayMode="Auto"
         SelectionChanged="SettingsNavigation_SelectionChanged">
       <NavigationView.MenuItems>
-        <NavigationViewItem Content="General" Tag="GeneralPage" />
-        <NavigationViewItem Content="Security" Tag="SecurityPage" />
-        <NavigationViewItem Content="Vault storage" Tag="VaultPage" />
-        <NavigationViewItem Content="Backup &amp; restore" Tag="BackupPage" />
-        <NavigationViewItem Content="Recovery A/B" Tag="RecoveryPage" />
-        <NavigationViewItem Content="Local sync" Tag="LocalSyncPage" />
-        <NavigationViewItem Content="GitHub sync" Tag="GitHubPage" />
-        <NavigationViewItem Content="Devices &amp; keys" Tag="DevicesPage" />
+        <NavigationViewItem Content="General &amp; security" Tag="GeneralPage" />
+        <NavigationViewItem Content="Backup &amp; recovery" Tag="BackupRecoveryPage" />
+        <NavigationViewItem Content="Sync" Tag="SyncPage" />
+        <NavigationViewItem Content="Devices &amp; advanced" Tag="DevicesPage" />
         <NavigationViewItem Content="About" Tag="AboutPage" />
       </NavigationView.MenuItems>
       <Grid x:Name="SettingsPages" MinWidth="0">
       <Grid x:Name="GeneralPage">
         <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="14">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="General" />
             <ComboBox x:Name="ThemeBox" Header="App theme">
               <ComboBoxItem Content="Use Windows setting" />
               <ComboBoxItem Content="Light" />
@@ -53,13 +50,11 @@
             <ToggleSwitch x:Name="LockWindowsToggle" Header="Lock when Windows locks or suspends" />
             <ToggleSwitch x:Name="HideCodesToggle" Header="Hide codes until revealed" />
             <ToggleSwitch x:Name="StartUnlockedToggle" Header="Try to unlock on launch" />
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-
-      <Grid x:Name="SecurityPage" Visibility="Collapsed">
-        <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="14">
+            <Border
+                Height="1"
+                Margin="0,8"
+                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Security &amp; privacy" />
             <NumberBox
                 x:Name="ClipboardDelayBox"
                 Header="Clear copied codes after (seconds)"
@@ -83,10 +78,10 @@
         </ScrollViewer>
       </Grid>
 
-      <Grid x:Name="VaultPage" Visibility="Collapsed">
+      <Grid x:Name="BackupRecoveryPage" Visibility="Collapsed">
         <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="12">
-            <TextBlock FontWeight="SemiBold" Text="Local vault format" />
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Vault status" />
             <TextBlock
                 x:Name="VaultModeText"
                 TextWrapping="Wrap" />
@@ -102,13 +97,11 @@
                 Click="UpgradeVaultButton_Click"
                 Content="Upgrade to v2…"
                 HorizontalAlignment="Left" />
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-
-      <Grid x:Name="BackupPage" Visibility="Collapsed">
-        <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="12">
+            <Border
+                Height="1"
+                Margin="0,8"
+                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Encrypted backup" />
             <InfoBar
                 HorizontalContentAlignment="Stretch"
                 IsClosable="False"
@@ -137,13 +130,11 @@
               <ComboBoxItem Content="Merge and keep duplicates" />
               <ComboBoxItem Content="Replace current vault exactly" />
             </ComboBox>
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-
-      <Grid x:Name="RecoveryPage" Visibility="Collapsed">
-        <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="12">
+            <Border
+                Height="1"
+                Margin="0,8"
+                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Recovery A/B" />
             <InfoBar
                 HorizontalContentAlignment="Stretch"
                 IsClosable="False"
@@ -183,15 +174,16 @@
         </ScrollViewer>
       </Grid>
 
-      <Grid x:Name="LocalSyncPage" Visibility="Collapsed">
+      <Grid x:Name="SyncPage" Visibility="Collapsed">
         <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="12">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Local-folder sync" />
             <InfoBar
                 HorizontalContentAlignment="Stretch"
                 IsClosable="False"
                 IsOpen="True"
                 Severity="Informational">
-              <TextBlock Text="Optional local-folder sync is encrypted and works offline. Use a folder shared by your Windows installations. GitHub sync is not part of this phase." TextWrapping="Wrap" />
+              <TextBlock Text="Optional local-folder sync is encrypted and works offline. Use a folder shared by your Windows installations." TextWrapping="Wrap" />
             </InfoBar>
             <TextBox
                 x:Name="SyncFolderBox"
@@ -237,13 +229,11 @@
             <TextBlock
                 Text="Secret conflicts preserve every encrypted secret version until you explicitly resolve them."
                 TextWrapping="Wrap" />
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
-
-      <Grid x:Name="GitHubPage" Visibility="Collapsed">
-        <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
-          <StackPanel Spacing="12">
+            <Border
+                Height="1"
+                Margin="0,8"
+                Background="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="GitHub sync" />
             <InfoBar
                 HorizontalContentAlignment="Stretch"
                 IsClosable="False"
@@ -300,6 +290,7 @@
       <Grid x:Name="DevicesPage" Visibility="Collapsed">
         <ScrollViewer Padding="16" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="12">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Authorised devices" />
             <InfoBar
                 HorizontalContentAlignment="Stretch"
                 IsClosable="False"
@@ -367,7 +358,7 @@
             <TextBlock FontSize="24" FontWeight="SemiBold" Text="Personal Authenticator" />
             <TextBlock Text="Version 2.0 preview · Local-first TOTP for Windows" />
             <TextBlock
-                Text="No analytics, telemetry, advertisements, GitHub integration, or required network access."
+                Text="No analytics, telemetry, advertisements, or required network access. GitHub sync remains optional and disabled until configured."
                 TextWrapping="Wrap" />
             <TextBlock FontWeight="SemiBold" Text="Third-party components" />
             <TextBlock

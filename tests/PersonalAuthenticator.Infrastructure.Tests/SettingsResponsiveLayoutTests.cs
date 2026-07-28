@@ -24,14 +24,10 @@ public sealed class SettingsResponsiveLayoutTests
 
         string[] expectedPages =
         [
-            "General",
-            "Security",
-            "Vault storage",
-            "Backup & restore",
-            "Recovery A/B",
-            "Local sync",
-            "GitHub sync",
-            "Devices & keys",
+            "General & security",
+            "Backup & recovery",
+            "Sync",
+            "Devices & advanced",
             "About",
         ];
         string[] actualPages = navigation.Descendants()
@@ -43,12 +39,8 @@ public sealed class SettingsResponsiveLayoutTests
         string[] pageNames =
         [
             "GeneralPage",
-            "SecurityPage",
-            "VaultPage",
-            "BackupPage",
-            "RecoveryPage",
-            "LocalSyncPage",
-            "GitHubPage",
+            "BackupRecoveryPage",
+            "SyncPage",
             "DevicesPage",
             "AboutPage",
         ];
@@ -74,6 +66,39 @@ public sealed class SettingsResponsiveLayoutTests
             element =>
                 AttributeOrNull(element, "Width") == "660" ||
                 AttributeOrNull(element, "MinWidth") == "560");
+    }
+
+    [Fact]
+    public void ConsolidatedCategories_PreserveExistingSettingsControls()
+    {
+        XDocument document = XDocument.Load(FindSettingsXaml());
+        XElement root = Assert.IsType<XElement>(document.Root);
+
+        Assert.NotNull(FindNamed(root, "ClipboardDelayBox"));
+        Assert.NotNull(FindNamed(root, "VaultModeText"));
+        Assert.NotNull(FindNamed(root, "BackupPasswordBox"));
+        Assert.NotNull(FindNamed(root, "RecoveryPasswordBox"));
+        Assert.NotNull(FindNamed(root, "SyncFolderBox"));
+        Assert.NotNull(FindNamed(root, "GitHubOwnerBox"));
+        Assert.NotNull(FindNamed(root, "DevicesList"));
+        Assert.DoesNotContain(
+            root.Descendants(),
+            element =>
+                AttributeOrNull(element, "Name") is
+                    "SecurityPage" or
+                    "VaultPage" or
+                    "BackupPage" or
+                    "RecoveryPage" or
+                    "LocalSyncPage" or
+                    "GitHubPage");
+
+        string visibleText = string.Join(
+            '\n',
+            root.DescendantsAndSelf()
+                .SelectMany(element => element.Attributes())
+                .Select(attribute => attribute.Value));
+        Assert.DoesNotContain("GitHub sync is not part of this phase.", visibleText);
+        Assert.DoesNotContain("No analytics, telemetry, advertisements, GitHub integration", visibleText);
     }
 
     [Fact]

@@ -115,12 +115,8 @@ public sealed partial class SettingsDialog : Window
         FrameworkElement[] pages =
         [
             GeneralPage,
-            SecurityPage,
-            VaultPage,
-            BackupPage,
-            RecoveryPage,
-            LocalSyncPage,
-            GitHubPage,
+            BackupRecoveryPage,
+            SyncPage,
             DevicesPage,
             AboutPage,
         ];
