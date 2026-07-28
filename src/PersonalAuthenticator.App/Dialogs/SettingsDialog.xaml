@@ -201,11 +201,10 @@
                       PasswordChar="●" />
                   <PasswordBox
                       x:Name="GitHubSyncPasswordBox"
-                      Header="Sync encryption password (4–12 characters; numbers allowed)"
-                      MaxLength="12"
+                      Header="Sync encryption password"
                       PasswordChar="●" />
                   <TextBlock
-                      Text="Four digits are accepted, but a longer password protects your encrypted sync data better."
+                      Text="For new setup, use 4–12 characters; numbers are allowed. If this repository was already configured, enter its original password exactly."
                       TextWrapping="Wrap" />
                   <ToggleSwitch
                       x:Name="GitHubBackgroundToggle"

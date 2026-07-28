@@ -26,7 +26,7 @@ internal static class GitHubRemoteProtocol
             ReadOnlyMemory<char> password,
             CancellationToken cancellationToken)
     {
-        ValidatePassword(password);
+        ValidateNewPassword(password);
         byte[] salt = RandomNumberGenerator.GetBytes(16);
         byte[] key = await DeriveKeyAsync(password, salt, cancellationToken);
         byte[] nonce = RandomNumberGenerator.GetBytes(12);
@@ -66,6 +66,7 @@ internal static class GitHubRemoteProtocol
         ReadOnlyMemory<char> password,
         CancellationToken cancellationToken)
     {
+        ValidateExistingPassword(password);
         if (descriptor.ProtocolVersion != ProtocolVersion ||
             descriptor.RequiredFeatures.Any(feature => feature != RequiredFeature))
         {
@@ -316,7 +317,6 @@ internal static class GitHubRemoteProtocol
         byte[] salt,
         CancellationToken cancellationToken)
     {
-        ValidatePassword(password);
         char[] characters = password.ToArray();
         byte[] bytes = Encoding.UTF8.GetBytes(characters);
         try
@@ -390,7 +390,7 @@ internal static class GitHubRemoteProtocol
         }
     }
 
-    internal static void ValidatePassword(ReadOnlyMemory<char> password)
+    internal static void ValidateNewPassword(ReadOnlyMemory<char> password)
     {
         if (password.Length is < MinimumSyncPasswordLength or
             > MaximumSyncPasswordLength)
@@ -398,6 +398,16 @@ internal static class GitHubRemoteProtocol
             throw new SafeApplicationException(
                 "GitHub.WeakSyncPassword",
                 "Use a GitHub sync password containing 4 to 12 characters. Numbers are allowed.");
+        }
+    }
+
+    internal static void ValidateExistingPassword(ReadOnlyMemory<char> password)
+    {
+        if (password.Length is < MinimumSyncPasswordLength or > 1024)
+        {
+            throw new SafeApplicationException(
+                "GitHub.WeakSyncPassword",
+                "The existing GitHub sync password must contain 4 to 1024 characters.");
         }
     }
 

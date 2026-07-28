@@ -97,7 +97,7 @@ public sealed class Phase5GitHubSyncTests : IDisposable
     [InlineData("123456789012")]
     public void SyncPassword_AcceptsFourThroughTwelveCharacters(string password)
     {
-        GitHubRemoteProtocol.ValidatePassword(password.AsMemory());
+        GitHubRemoteProtocol.ValidateNewPassword(password.AsMemory());
     }
 
     [Theory]
@@ -106,9 +106,15 @@ public sealed class Phase5GitHubSyncTests : IDisposable
     public void SyncPassword_RejectsLengthsOutsideFourThroughTwelve(string password)
     {
         SafeApplicationException exception = Assert.Throws<SafeApplicationException>(
-            () => GitHubRemoteProtocol.ValidatePassword(password.AsMemory()));
+            () => GitHubRemoteProtocol.ValidateNewPassword(password.AsMemory()));
 
         Assert.Equal("GitHub.WeakSyncPassword", exception.ErrorCode);
+    }
+
+    [Fact]
+    public void ExistingSyncPassword_AllowsLegacyLongPassword()
+    {
+        GitHubRemoteProtocol.ValidateExistingPassword(new string('p', 20).AsMemory());
     }
 
     [Fact]
