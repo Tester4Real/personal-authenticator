@@ -12,6 +12,8 @@ internal static class GitHubRemoteProtocol
 {
     public const int ProtocolVersion = 1;
     public const string RequiredFeature = "immutable-operations-v1";
+    internal const int MinimumSyncPasswordLength = 4;
+    internal const int MaximumSyncPasswordLength = 12;
     private static readonly byte[] ObjectMagic = "PAVGHO01"u8.ToArray();
     private const int ObjectHeaderLength = 84;
     private const int TagLength = 16;
@@ -388,13 +390,14 @@ internal static class GitHubRemoteProtocol
         }
     }
 
-    private static void ValidatePassword(ReadOnlyMemory<char> password)
+    internal static void ValidatePassword(ReadOnlyMemory<char> password)
     {
-        if (password.Length is < 12 or > 1024)
+        if (password.Length is < MinimumSyncPasswordLength or
+            > MaximumSyncPasswordLength)
         {
             throw new SafeApplicationException(
                 "GitHub.WeakSyncPassword",
-                "Use a GitHub sync password containing 12 to 1024 characters.");
+                "Use a GitHub sync password containing 4 to 12 characters. Numbers are allowed.");
         }
     }
 

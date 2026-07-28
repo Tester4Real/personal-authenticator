@@ -12,7 +12,7 @@ public sealed class Phase5GitHubSyncTests : IDisposable
 {
     private static string TestCredential => new('t', 32);
 
-    private static string SyncPassword => new('p', 20);
+    private static string SyncPassword => new('p', 12);
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), $"pa-github-tests-{Guid.NewGuid():N}");
 
@@ -90,6 +90,25 @@ public sealed class Phase5GitHubSyncTests : IDisposable
         GitHubSyncStatus status = await store.GetGitHubStatusAsync(
             TestContext.Current.CancellationToken);
         Assert.Equal("owner/empty@sync", status.Repository);
+    }
+
+    [Theory]
+    [InlineData("1234")]
+    [InlineData("123456789012")]
+    public void SyncPassword_AcceptsFourThroughTwelveCharacters(string password)
+    {
+        GitHubRemoteProtocol.ValidatePassword(password.AsMemory());
+    }
+
+    [Theory]
+    [InlineData("123")]
+    [InlineData("1234567890123")]
+    public void SyncPassword_RejectsLengthsOutsideFourThroughTwelve(string password)
+    {
+        SafeApplicationException exception = Assert.Throws<SafeApplicationException>(
+            () => GitHubRemoteProtocol.ValidatePassword(password.AsMemory()));
+
+        Assert.Equal("GitHub.WeakSyncPassword", exception.ErrorCode);
     }
 
     [Fact]

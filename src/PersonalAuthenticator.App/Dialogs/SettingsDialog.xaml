@@ -201,8 +201,12 @@
                       PasswordChar="●" />
                   <PasswordBox
                       x:Name="GitHubSyncPasswordBox"
-                      Header="Sync encryption password (12+ characters)"
+                      Header="Sync encryption password (4–12 characters; numbers allowed)"
+                      MaxLength="12"
                       PasswordChar="●" />
+                  <TextBlock
+                      Text="Four digits are accepted, but a longer password protects your encrypted sync data better."
+                      TextWrapping="Wrap" />
                   <ToggleSwitch
                       x:Name="GitHubBackgroundToggle"
                       Header="Sync automatically every 15 minutes" />
