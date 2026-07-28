@@ -24,6 +24,7 @@ public sealed partial class V2SqliteVaultStore : IV2VaultStore
     private const long MaximumDatabaseBytes = 256L * 1024 * 1024;
     private readonly IVaultRootKeyProvider _rootKeyProvider;
     private readonly DpapiDeviceIdentityStore _deviceIdentityStore;
+    private Func<Guid, long, bool>? _remoteOperationValidator;
 
     public V2SqliteVaultStore(string databasePath, string? keyPath = null)
         : this(
@@ -57,6 +58,10 @@ public sealed partial class V2SqliteVaultStore : IV2VaultStore
     }
 
     public string DatabasePath { get; }
+
+    internal void SetRemoteOperationValidator(
+        Func<Guid, long, bool>? validator) =>
+        _remoteOperationValidator = validator;
 
     public Task<bool> ExistsAsync(CancellationToken cancellationToken)
     {

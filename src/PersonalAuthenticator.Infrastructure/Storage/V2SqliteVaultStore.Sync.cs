@@ -692,6 +692,16 @@ public sealed partial class V2SqliteVaultStore
                     continue;
                 }
 
+                if (_remoteOperationValidator is not null &&
+                    !_remoteOperationValidator(
+                        remote.DeviceId,
+                        remote.DeviceSequence))
+                {
+                    throw new SafeApplicationException(
+                        "Sync.DeviceRevoked",
+                        "A new operation from a revoked Windows device was rejected. Previously accepted history remains unchanged.");
+                }
+
                 if (operations.Values.Any(operation =>
                         operation.DeviceId == remote.DeviceId &&
                         operation.DeviceSequence == remote.DeviceSequence))
@@ -807,6 +817,47 @@ public sealed partial class V2SqliteVaultStore
             }
 
             CryptographicOperations.ZeroMemory(rootKey);
+        }
+    }
+
+    internal async Task<IReadOnlyList<SyncDeviceActivity>>
+        GetSyncDeviceActivityAsync(CancellationToken cancellationToken)
+    {
+        byte[] rootKey = await _rootKeyProvider.LoadAsync(cancellationToken);
+        List<SyncOperation>? operations = null;
+        try
+        {
+            await using SqliteConnection connection =
+                CreateConnection(SqliteOpenMode.ReadOnly);
+            await OpenAndConfigureAsync(
+                connection,
+                writable: false,
+                cancellationToken);
+            await VerifySchemaAndIntegrityAsync(connection, cancellationToken);
+            operations = await LoadAllOperationsAsync(
+                connection,
+                rootKey,
+                cancellationToken);
+            return operations
+                .GroupBy(operation => operation.DeviceId)
+                .Select(group => new SyncDeviceActivity(
+                    group.Key,
+                    group.Min(operation => operation.OccurredAtUtc),
+                    group.Max(operation => operation.OccurredAtUtc),
+                    group.Max(operation => operation.DeviceSequence)))
+                .OrderByDescending(item => item.LastSeenAtUtc)
+                .ToList();
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(rootKey);
+            if (operations is not null)
+            {
+                foreach (SyncOperation operation in operations)
+                {
+                    operation.Dispose();
+                }
+            }
         }
     }
 

@@ -5,6 +5,7 @@ using PersonalAuthenticator.Core.Exceptions;
 using PersonalAuthenticator.Infrastructure.GitHub;
 using PersonalAuthenticator.Infrastructure.Otp;
 using PersonalAuthenticator.Infrastructure.Recovery;
+using PersonalAuthenticator.Infrastructure.Security;
 using PersonalAuthenticator.Infrastructure.Sync;
 
 namespace PersonalAuthenticator.Infrastructure.Storage;
@@ -16,6 +17,7 @@ public sealed partial class VersionedVaultStore :
     IRecoveryService,
     ILocalFolderSyncService,
     IGitHubSyncService,
+    ISecurityLifecycleService,
     IDisposable
 {
     private readonly string _baseDirectory;
@@ -30,6 +32,8 @@ public sealed partial class VersionedVaultStore :
     private readonly GitHubSyncConfigStore _githubConfigStore;
     private readonly GitHubCredentialStore _githubCredentialStore;
     private readonly IGitHubApiClientFactory _githubClientFactory;
+    private readonly SecurityStateStore _securityStateStore;
+    private readonly Action<SecurityCheckpoint>? _securityCheckpoint;
     private Timer? _githubBackgroundTimer;
     private Timer? _githubDebounceTimer;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -48,7 +52,8 @@ public sealed partial class VersionedVaultStore :
         RecoveryBundleCodec? recoveryCodec,
         Action<RecoveryCheckpoint>? recoveryCheckpoint,
         Action<LocalSyncCheckpoint>? syncCheckpoint = null,
-        IGitHubApiClientFactory? githubClientFactory = null)
+        IGitHubApiClientFactory? githubClientFactory = null,
+        Action<SecurityCheckpoint>? securityCheckpoint = null)
     {
         ArgumentNullException.ThrowIfNull(legacyLogger);
         _legacyLogger = legacyLogger;
@@ -73,8 +78,11 @@ public sealed partial class VersionedVaultStore :
             Path.Combine(_baseDirectory, "github-sync.dat"));
         _githubCredentialStore = new GitHubCredentialStore(
             Path.Combine(_baseDirectory, "github-token.dat"));
+        _securityStateStore = new SecurityStateStore(
+            Path.Combine(_baseDirectory, "security-state.dat"));
         _githubClientFactory =
             githubClientFactory ?? new HttpGitHubApiClientFactory();
+        _securityCheckpoint = securityCheckpoint;
         ConfigureGitHubTimer(enabled: true);
     }
 
@@ -1047,9 +1055,21 @@ public sealed partial class VersionedVaultStore :
             throw V2Required();
         }
 
-        return new V2SqliteVaultStore(
+        var store = new V2SqliteVaultStore(
             ResolveSelectedPath(pointer.StoreFileName),
             ResolveSelectedPath(pointer.RootKeyFileName ?? "vault-v2.key"));
+        SecurityState securityState =
+            await _securityStateStore.LoadAsync(cancellationToken);
+        Dictionary<Guid, long> revoked = securityState.Devices
+            .Where(pair => pair.Value.RevokedAtUtc.HasValue)
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.RevokedAfterSequence ?? 0);
+        store.SetRemoteOperationValidator(
+            (deviceId, sequence) =>
+                !revoked.TryGetValue(deviceId, out long cutoff) ||
+                sequence <= cutoff);
+        return store;
     }
 
     private static VaultAccountV2 FindV2Account(
