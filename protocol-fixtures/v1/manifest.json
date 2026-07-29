@@ -1,0 +1,608 @@
+{
+  "fixtureVersion": 1,
+  "testOnly": true,
+  "warning": "Synthetic conformance data only. Never use these values as credentials or OTP seeds.",
+  "protocol": {
+    "version": 1,
+    "requiredFeature": "immutable-operations-v1",
+    "objectMagic": "PAVGHO01",
+    "objectHeaderBytes": 84,
+    "tagBytes": 16,
+    "maximumDecryptedOperationBytes": 131072,
+    "integerEncoding": "little-endian",
+    "guidEncoding": ".NET Guid.ToByteArray/TryWriteBytes",
+    "timestampEncoding": ".NET UTC ticks since 0001-01-01T00:00:00Z",
+    "parentOrdering": ".NET Guid.CompareTo"
+  },
+  "argon2id": {
+    "password": "fixture-sync-password",
+    "saltBase64": "AAECAwQFBgcICQoLDA0ODw==",
+    "memoryKiB": 65536,
+    "iterations": 3,
+    "parallelism": 2,
+    "outputBytes": 32,
+    "outputBase64": "S6Q4wewRXz5xThouBxUPpyeHMLO\u002BN/w6htFeUk6UlWA="
+  },
+  "verifier": {
+    "repositoryId": 1234567890123,
+    "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+    "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+    "inputHex": "cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f",
+    "sha256Hex": "28603f4e87e8d6724d8cc6d7f95aedbba57356286f0cb37ba8cb17611f8e0184"
+  },
+  "descriptor": {
+    "file": "descriptor.json",
+    "sha256Hex": "79b2c1ff5cac468281447c41ffa95fc1053d2ce5e002c7e130a359b61b946ffb",
+    "propertyNames": [
+      "ProtocolVersion",
+      "RequiredFeatures",
+      "RepositoryId",
+      "VaultId",
+      "RemoteGeneration",
+      "Salt",
+      "Nonce",
+      "VerifierCiphertext",
+      "VerifierTag"
+    ]
+  },
+  "dotNetGuidVectors": [
+    {
+      "value": "00112233-4455-6677-8899-aabbccddeeff",
+      "toByteArrayHex": "33221100554477668899aabbccddeeff",
+      "tryWriteBytesHex": "33221100554477668899aabbccddeeff"
+    },
+    {
+      "value": "00112234-4455-6677-8899-aabbccddeeff",
+      "toByteArrayHex": "34221100554477668899aabbccddeeff",
+      "tryWriteBytesHex": "34221100554477668899aabbccddeeff"
+    },
+    {
+      "value": "10112233-4455-6677-8899-aabbccddeeff",
+      "toByteArrayHex": "33221110554477668899aabbccddeeff",
+      "tryWriteBytesHex": "33221110554477668899aabbccddeeff"
+    },
+    {
+      "value": "00112233-4456-6677-8899-aabbccddeeff",
+      "toByteArrayHex": "33221100564477668899aabbccddeeff",
+      "tryWriteBytesHex": "33221100564477668899aabbccddeeff"
+    }
+  ],
+  "dotNetGuidCompareOrder": [
+    "00112233-4455-6677-8899-aabbccddeeff",
+    "00112233-4456-6677-8899-aabbccddeeff",
+    "00112234-4455-6677-8899-aabbccddeeff",
+    "10112233-4455-6677-8899-aabbccddeeff"
+  ],
+  "utcTickVectors": [
+    {
+      "iso8601": "0001-01-01T00:00:00.0000000\u002B00:00",
+      "utcTicks": 0
+    },
+    {
+      "iso8601": "2026-01-02T03:04:05.0000000\u002B00:00",
+      "utcTicks": 639029198450000000
+    },
+    {
+      "iso8601": "2026-01-02T03:04:05.0006789\u002B00:00",
+      "utcTicks": 639029198450006789
+    }
+  ],
+  "nestedRecordJson": [
+    {
+      "kind": "account",
+      "file": "records/account.json",
+      "utf8": "{\u0022schemaVersion\u0022:1,\u0022id\u0022:\u002220314253-6475-8697-a8b9-cadbecfd0e1f\u0022,\u0022issuer\u0022:\u0022Fixture\u0022,\u0022accountName\u0022:\u0022alice@example.test\u0022,\u0022activeSecretVersionId\u0022:\u002230415263-7485-96a7-b8c9-daebfc0d1e2f\u0022,\u0022favourite\u0022:true,\u0022sortOrder\u0022:7,\u0022createdAtUtc\u0022:\u00222026-01-02T02:59:05\u002B00:00\u0022,\u0022updatedAtUtc\u0022:\u00222026-01-02T03:00:05\u002B00:00\u0022,\u0022archivedAtUtc\u0022:null}",
+      "sha256Hex": "baafe637b2094d511fd14bcbee154db7dd897278420f5296b9926dcfd494d5c7"
+    },
+    {
+      "kind": "secret-version",
+      "file": "records/secret-version.json",
+      "utf8": "{\u0022schemaVersion\u0022:1,\u0022id\u0022:\u002230415263-7485-96a7-b8c9-daebfc0d1e2f\u0022,\u0022accountId\u0022:\u002220314253-6475-8697-a8b9-cadbecfd0e1f\u0022,\u0022secretBytes\u0022:\u0022AQIDBAUGBwgJCgsMDQ4PEBESExQ=\u0022,\u0022algorithm\u0022:1,\u0022digits\u0022:8,\u0022period\u0022:45,\u0022provisioningUri\u0022:\u0022otpauth://totp/Fixture%3Aalice%40example.test?secret=AEBAGBAFAYDQQCIKBMGA2DQPCAIREEYU\\u0026issuer=Fixture\\u0026algorithm=SHA256\\u0026digits=8\\u0026period=45\u0022,\u0022provisioningUriOrigin\u0022:0,\u0022state\u0022:0,\u0022createdAtUtc\u0022:\u00222026-01-02T02:59:05\u002B00:00\u0022,\u0022retiredAtUtc\u0022:null}",
+      "sha256Hex": "efff9878e6770858e6765919bd6ee868240871d0e22b75aee5feafcad630983b"
+    },
+    {
+      "kind": "history",
+      "file": "records/history.json",
+      "utf8": "{\u0022schemaVersion\u0022:1,\u0022id\u0022:\u002250617283-94a5-b6c7-d8e9-fa0b1c2d3e4f\u0022,\u0022accountId\u0022:\u002220314253-6475-8697-a8b9-cadbecfd0e1f\u0022,\u0022action\u0022:7,\u0022occurredAtUtc\u0022:\u00222026-01-02T03:06:05\u002B00:00\u0022,\u0022secretVersionId\u0022:\u002240516273-8495-a6b7-c8d9-eafb0c1d2e3f\u0022,\u0022previousSecretVersionId\u0022:\u002230415263-7485-96a7-b8c9-daebfc0d1e2f\u0022,\u0022relatedAccountId\u0022:null,\u0022actorDeviceId\u0022:\u002260718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f\u0022}",
+      "sha256Hex": "2bb214542eac5d9d6e0ea99d296961b6621e33640448651e9c48ada8b7f91ee8"
+    }
+  ],
+  "fieldKeys": [
+    "account",
+    "issuer",
+    "account-name",
+    "favourite",
+    "sort-order",
+    "archive",
+    "secret-set",
+    "active-secret",
+    "history",
+    "duplicate-decision",
+    "purge",
+    "resolution"
+  ],
+  "payloadFlagUnion": 2047,
+  "payloadFlagUnionHex": "0x7FF",
+  "operations": [
+    {
+      "kind": 0,
+      "kindValue": 0,
+      "fieldKey": "account",
+      "payloadFlags": 192,
+      "payloadFlagsHex": "0x0C0",
+      "operationId": "90000001-1111-2222-3344-5566778899aa",
+      "deviceId": "60718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f",
+      "deviceSequence": 1,
+      "logicalClock": 1,
+      "occurredAtUtcTicks": 639029198450000001,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [],
+      "serializedCausalParents": [],
+      "operationFile": "operations/00-account-added.bin",
+      "operationSha256": "8f2df60a322c39f49f62f8461f72711950b7b3ddc56739188ac38a7ab0ea8929",
+      "semanticHash": "0a52559097dd74b17e112be247c27d3c4fdf30eef71381997ce888d77b8e19f0",
+      "envelopeFile": "objects/00-account-added.pao",
+      "envelopeSha256": "2054f0704117c34235a63eef52339c89f8f2fad65b91db2f976c501f0c59d139",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000001-1111-2222-3344-5566778899aa",
+        "nonceHex": "057ef63c0acc6d7f48ef54db",
+        "plaintextLength": 898,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f010000901111222233445566778899aa057ef63c0acc6d7f48ef54db82030000",
+        "ciphertextHex": "84ef77055712b0aa6c711e698b6e366159d76da84de269383e5f4b2c5a18b77c411e6b7fc3b968cfad04a90505405b156cb11c7aafccf058c590c5e974a11107aac8cc1aa40a19d074979355b830d194c98e0adb4eb86571064b281c636e39ad92b67a6c751ba6aa116d4a46314248790b7ef978b6ba411e8be0af029bcb7997b3f1bc48298e6d216aa801dfd70b05ef37de5d3235f0a2366567de470c6a4cb1efaf397786d8743ce11e91816e60d179d0545f1a5d085648ce72c325e9c50600688b94d576e57a35e37babcb77d8143ed627a07be23a0f60659c9f994e486eac0a6180cdf0314c32160f686ae8e4ff48a99902c8f0225dbd9ee7ff12a4204f22c831d4cd942a0b9e96bb8614f59889079976173ccc84b6d0c6ab723cd36542a67782ca5d32f5c2788a13bfd8db94bc3868f0da5919b399fe2b635abc143ab3c15f8873669ab25b531f70cef591c994c9e6e93a71af5fa25e608d46274e8ba12f2e16dd3a5ca47099ddc64c64545c24eb3b095b8340830ea84073342a7cae99f3f35c450766f058a72c22853e4c37dfef95f3cad55846ad655549fcf98bfef4682549b898aa4adb645455415e10abe31da774719e60d57b16f4614ee39a4b6dd7abe19f239e4ff23d39f0c1ca0d84fb1f43e1049123aaed5091bb14a456a0cde3014d708906307dc0416820577c55253ca9cc979252c8ac4d72742ff8660eb8f8a7a34c5fb4214627e3915b9b195db661cb0f4e66f1a93db3339dc675bcdc79bd097c6fd9724bb816358cf163f8f4aee6e1d3e607a00fb2ced0a2608a627f08a4bd6ed3abcf2b8b82ceaf304e0f143069a8f105523fc6e15c8c7973b1ea8dfe19a8320a1cd145f84b52f4d7d4da26924d775c93e15e0cb2a8fd60ece02c45edf8cfb0b796463840ab474f7f021d60e9c019e7e568db616ff3621d75f76804e7a71fd9dc4c53715cb547da607fd964679a4659874397ab6400aa6875a124a7e9676dfe727b1976d793425b5fbf2e751fefd6c7cdfb744b5c8004ef3f72b8acd523188d3b5130630aa16a7b4546503ab0fe658f0828b89ae58fc16585640232139b73a64e49a075a68f582d3d59cf80f51b866ebc41383100e6d37804fbd6fb049101739966a039df01cf207532f1c0c3ca61a101b2e8f37e69097f9c49730e61d87b0c190b31d6ec53c9739d1299d1dd77a911f874295c884a1894fdc147ef14eb0afb3ebc0d9602b23de2b536ad51e8da964f8d2e11dd2664a9465c655696d9f24969",
+        "tagHex": "a4302113dc0708b198da47d4933bd3b0"
+      }
+    },
+    {
+      "kind": 1,
+      "kindValue": 1,
+      "fieldKey": "issuer",
+      "payloadFlags": 1,
+      "payloadFlagsHex": "0x001",
+      "operationId": "90000002-1111-2222-3344-5566778899aa",
+      "deviceId": "718293a4-b5c6-d7e8-f90a-1b2c3d4e5f60",
+      "deviceSequence": 2,
+      "logicalClock": 2,
+      "occurredAtUtcTicks": 639029198450000002,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/01-issuer-changed.bin",
+      "operationSha256": "46f612813fb2b99306a5679be81dded14a459339503568d63f02622aecd03de9",
+      "semanticHash": "02c2f6c2eee338fd76bf115378cd0e6162dfedf12e8d535e48ae6ea34f0b137c",
+      "envelopeFile": "objects/01-issuer-changed.pao",
+      "envelopeSha256": "4449982a29bf08599422afff9123051155a01c3b9b02c00f9eec98ee1125cf70",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000002-1111-2222-3344-5566778899aa",
+        "nonceHex": "8a2d4eabf141461edb3fa33d",
+        "plaintextLength": 134,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f020000901111222233445566778899aa8a2d4eabf141461edb3fa33d86000000",
+        "ciphertextHex": "c8b875ceddd10dbb2cbc4bb65e535c3b5382871c6bda1dea3b8e7e76f61bd895577a62de665dbeefd20f31d001ceb7c815f9530fad2128b6e38a87f55b584de72855758b14a8033554b4af4219f4e8cbba45fb7a7a62ca7752aacd20d0f6dca4812a46548e26757d5dc0e154c2399e381734134c6bced0fee580525634761087b01f2828340f",
+        "tagHex": "2b504aeb6ffe590837f7f95366b1adae"
+      }
+    },
+    {
+      "kind": 2,
+      "kindValue": 2,
+      "fieldKey": "account-name",
+      "payloadFlags": 1,
+      "payloadFlagsHex": "0x001",
+      "operationId": "90000003-1111-2222-3344-5566778899aa",
+      "deviceId": "60718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f",
+      "deviceSequence": 3,
+      "logicalClock": 3,
+      "occurredAtUtcTicks": 639029198450000003,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa",
+        "f0000000-1111-2222-3344-5566778899aa",
+        "0000000f-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "0000000f-1111-2222-3344-5566778899aa",
+        "90000001-1111-2222-3344-5566778899aa",
+        "f0000000-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/02-account-name-changed.bin",
+      "operationSha256": "ff865624c8cb7b82c71d80fac003c72c6f8edcdd7f1ce502d2eb47233ace952c",
+      "semanticHash": "2bca9639a4818e5659bde4da1673146ffa74f853b26c5b47a5ed5fa1bfd99692",
+      "envelopeFile": "objects/02-account-name-changed.pao",
+      "envelopeSha256": "5c6c1736156e66511b338bcab90a9db9b0f235a49470f3c5c4585be0d28bffae",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000003-1111-2222-3344-5566778899aa",
+        "nonceHex": "84368bbb3f1902a5950634f0",
+        "plaintextLength": 183,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f030000901111222233445566778899aa84368bbb3f1902a5950634f0b7000000",
+        "ciphertextHex": "db1574700d509ccb653be89220242fb5d35f2e327775888f0e3eb61f06c15ed467fc313c55033963421383035de39c05012e72ff2fbcfdd1be3f6277613f84e60161e182092b018b490133f0a2a83f5cdc54fa40f8be8b035d263d7fc7c0e37d4a4e953a28030805020058286b68d9b7a92400c040c76e821cc04d33979a7d772958a64ba43f1506902df8d371200e42ace74e3a1d6ac8b00148ba0058b2b1e86674eec06097c3ac10a9929503795facca3ad62457b427",
+        "tagHex": "622b25ec90d08352f7f683ea9f818812"
+      }
+    },
+    {
+      "kind": 3,
+      "kindValue": 3,
+      "fieldKey": "favourite",
+      "payloadFlags": 2,
+      "payloadFlagsHex": "0x002",
+      "operationId": "90000004-1111-2222-3344-5566778899aa",
+      "deviceId": "718293a4-b5c6-d7e8-f90a-1b2c3d4e5f60",
+      "deviceSequence": 4,
+      "logicalClock": 4,
+      "occurredAtUtcTicks": 639029198450000004,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/03-favourite-changed.bin",
+      "operationSha256": "6b630e15b4de65ecc09020f40e1c734477d116254db507474fe64cf5c8a315db",
+      "semanticHash": "55053b32ed1586d653f6f97f241711b04d0298fe15ced9be5ffd432f4896c0fc",
+      "envelopeFile": "objects/03-favourite-changed.pao",
+      "envelopeSha256": "449a4497f12dfc88266e6030e3526dec0e904568fb4ac9d875905181805365ce",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000004-1111-2222-3344-5566778899aa",
+        "nonceHex": "e494b4ce782d28270b6745c9",
+        "plaintextLength": 119,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f040000901111222233445566778899aae494b4ce782d28270b6745c977000000",
+        "ciphertextHex": "49f4c40cb5f4340897709d969f41074221c01a3aa02d83818eba36bd7863d1905b5f9cd1c6949da2a0871b31dd0436cdf1b9a73cfe2f47726d2350dd5d6bb8225a3f77bea8dc62ae4addf3b945a8efe6b8fc0e9ed3ab6a6cb8620c820b38f381ef6eadd46ede691bd024e9f6fd0ee53a6467f31ced17be",
+        "tagHex": "7fcd047efbf66423b9e0f8ba79d79a08"
+      }
+    },
+    {
+      "kind": 4,
+      "kindValue": 4,
+      "fieldKey": "sort-order",
+      "payloadFlags": 4,
+      "payloadFlagsHex": "0x004",
+      "operationId": "90000005-1111-2222-3344-5566778899aa",
+      "deviceId": "60718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f",
+      "deviceSequence": 5,
+      "logicalClock": 5,
+      "occurredAtUtcTicks": 639029198450000005,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/04-sort-order-changed.bin",
+      "operationSha256": "8e4c05603558856570533a10f7f238b8f6fe7a5d81075fcf66652461ef9338d9",
+      "semanticHash": "a9da8ca7ada22dce6299987bc327ec55d68b3c523eb85821b99eadbdf3dc0ba3",
+      "envelopeFile": "objects/04-sort-order-changed.pao",
+      "envelopeSha256": "c221effc429eebbc41f88a43feb2a3400171e3d130d87aadb34468ec6e0775c8",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000005-1111-2222-3344-5566778899aa",
+        "nonceHex": "d1be5cce40fde5893497125c",
+        "plaintextLength": 123,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f050000901111222233445566778899aad1be5cce40fde5893497125c7b000000",
+        "ciphertextHex": "21fcdca9b5aadf816521ef55e223b2eee40a029bffb70af77dfabde9bb532c304f2e02a327b24cfeb1eda184093136516e453a25e6022fbb55f89f84499b17f60451785520c40152e8d430dc4c3dc6219d78bed3f55205f2a0cf9cfc8f77b7e751235826112acbf38456ea9035516ce9193be62f4cfc47bfc66b8a",
+        "tagHex": "2bbc4dce4560f08a3160b7a60b4db718"
+      }
+    },
+    {
+      "kind": 5,
+      "kindValue": 5,
+      "fieldKey": "archive",
+      "payloadFlags": 8,
+      "payloadFlagsHex": "0x008",
+      "operationId": "90000006-1111-2222-3344-5566778899aa",
+      "deviceId": "718293a4-b5c6-d7e8-f90a-1b2c3d4e5f60",
+      "deviceSequence": 6,
+      "logicalClock": 6,
+      "occurredAtUtcTicks": 639029198450000006,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/05-archive-changed.bin",
+      "operationSha256": "562f4b3d30c90ec361ca5d46d96465570acfc0efdc730afa7713285f1ceb8bae",
+      "semanticHash": "c5ee55f938b37b372c67eb153e391645ea286fa31245ab65b204b3b3417f30c1",
+      "envelopeFile": "objects/05-archive-changed.pao",
+      "envelopeSha256": "87b7f816409bf34ed16e7c26cc017b144e42884dddd226eca5e1b4df818064c5",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000006-1111-2222-3344-5566778899aa",
+        "nonceHex": "0392709766ae86d0ec30a530",
+        "plaintextLength": 124,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f060000901111222233445566778899aa0392709766ae86d0ec30a5307c000000",
+        "ciphertextHex": "57a6d45b0f6f7a4b91297944e50b3f91ec31e8d6c25edae64fda6a90bda39cc385b3d10e7afa0582b2dc2d60af2a0ea6f9405eee54196811de769c3475126bf217d2605ec71a075cabdd3bd93b6a4f4a1307d45a8c8ad8f1a8b72ae28fc38d765c342263f502dd269ff061cf2a20b6487d070310de25977a717d6dfc",
+        "tagHex": "cd525a91c6158c1adbfa98c1df2ddaf9"
+      }
+    },
+    {
+      "kind": 6,
+      "kindValue": 6,
+      "fieldKey": "secret-set",
+      "payloadFlags": 128,
+      "payloadFlagsHex": "0x080",
+      "operationId": "90000007-1111-2222-3344-5566778899aa",
+      "deviceId": "60718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f",
+      "deviceSequence": 7,
+      "logicalClock": 7,
+      "occurredAtUtcTicks": 639029198450000007,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/06-secret-added.bin",
+      "operationSha256": "618f896fb74ea964d0206fb613dad7e9baad3b88074a86ec39dabcf68c710bed",
+      "semanticHash": "7177574b2ff2e44d4277e2b50ac503c1d16ed3c81539244c8d0777cd1ae800c1",
+      "envelopeFile": "objects/06-secret-added.pao",
+      "envelopeSha256": "9ebb5297a7d91b48437369026d3afdd8fccfc2db946e9834038a44e4d76b8a24",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000007-1111-2222-3344-5566778899aa",
+        "nonceHex": "3bd66963de5d83d04ff3c402",
+        "plaintextLength": 568,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f070000901111222233445566778899aa3bd66963de5d83d04ff3c40238020000",
+        "ciphertextHex": "d1f657b2d34c00921a9b8ef30771f7e2d4e15e85675a453044e41b642958c442d23dde11ce1d584afa73be9432ddcfcd2df157a9ba95cd27d726121a5dc537c0ef953f4d337accefa41579ec15c6b6d1f81e9904df86fe5320265fdbd82f716fab989c75874ce88612986d92c73169c1e0cb4a9cbdce725afc63de0c5e460e7326c06244c4e902da7a12f5a1325e832bf82761afd8bc887ddb6a828d952a4ece800014aa0106acaae3bc2d123ada82bdf9523fe7ede0b44d26a4bb472c9ef97f6590f973155dd43084cbff346cec475ec700575b86d2c45605ae0d5d7a0479d7dc2b6ff49d17f6442edb1b97d53c6256a4e01dd179f8628aba4cf72b87e555cd39358189c6fe4fb14a5ade31d79f0b39aafdc6df3fc7475684dba63f8e17ee0079ae88301cb423ae4b088dc6bdfbf4d87da1aea6c8bab45a23c5b3e1508f93cf52412e213d97204b10cbdd11dec3252ea3995fb146ee86eda7a574e346128f22a0a224a5274a8eaa11ee1d07ccfd1fcce1458087de0479285d947b21c2c93b8e74c222455ea7f44cda01471d239feb8d4106a3361d26631b0866dcf194ff4c0716f73cf296c230b2e2776ab372f5b6030324c88b65a759afc30a5c4c5454256bafd187711f08d5e645bcef4f3129a84240f60b64a67153dc49903c53771fa998e6a1618cecd3fc36cde4866808e45426ce1bca7d5b4c55e86b80ec0ac34e845e0f6843038bac19e1f7fe85cd13386e2763a0490d8b88f4f94813bf845b36d93245dcdae452b64e8ad989ef9cec09c6c2a1d9dbad97219296",
+        "tagHex": "e6d4a2c305b1dff0cd87c1ecd6197cf9"
+      }
+    },
+    {
+      "kind": 7,
+      "kindValue": 7,
+      "fieldKey": "active-secret",
+      "payloadFlags": 16,
+      "payloadFlagsHex": "0x010",
+      "operationId": "90000008-1111-2222-3344-5566778899aa",
+      "deviceId": "718293a4-b5c6-d7e8-f90a-1b2c3d4e5f60",
+      "deviceSequence": 8,
+      "logicalClock": 8,
+      "occurredAtUtcTicks": 639029198450000008,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000007-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000007-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/07-active-secret-changed.bin",
+      "operationSha256": "374a8ea4d6d206ed025a7fc0024088c20a039d03bdb509acf2719a6580e679d8",
+      "semanticHash": "68ea94eeea14941c7fe6fd24f1b12c9dd2e294ce7225c3a25cdfd6fdb0c73382",
+      "envelopeFile": "objects/07-active-secret-changed.pao",
+      "envelopeSha256": "24173bcc9f9814bda2822148c357730249af9ff6fc55b6fc89c046bbaaac862d",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000008-1111-2222-3344-5566778899aa",
+        "nonceHex": "0cd0113174f1c05987756137",
+        "plaintextLength": 138,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f080000901111222233445566778899aa0cd0113174f1c059877561378a000000",
+        "ciphertextHex": "a8bca4568d3bd67d45a2f1f8081cb47dc55db0272ce6c615b978fcaef02aef68cde9e6097c4737a6ff41509d4a8628e2f366b546ec4ae9580cdad7bfdbc29dd0683bbe2765df6045b0d79123f35c5a8c92d65c7689ad2d8cf661674410584e58bc032c76d4e905df073c765e0c1c79a757370233bb9f8ce4540adbf55cae0fa9b52fd64d29e81d13d723",
+        "tagHex": "e427519a19de2401288cd010221780db"
+      }
+    },
+    {
+      "kind": 8,
+      "kindValue": 8,
+      "fieldKey": "history:5061728394a5b6c7d8e9fa0b1c2d3e4f",
+      "payloadFlags": 256,
+      "payloadFlagsHex": "0x100",
+      "operationId": "90000009-1111-2222-3344-5566778899aa",
+      "deviceId": "60718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f",
+      "deviceSequence": 9,
+      "logicalClock": 9,
+      "occurredAtUtcTicks": 639029198450000009,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/08-history-added.bin",
+      "operationSha256": "9d7f236066381b4e79088f3da447ed18746f6ad5504e8c8ded1f00da0f30f425",
+      "semanticHash": "ce329da8ac5099b9fc06af3f6b27254ec1b0fa2f8f2c69392a6c45e7a7c05101",
+      "envelopeFile": "objects/08-history-added.pao",
+      "envelopeSha256": "2ae73a85a7d2ace540d445e70199fb276ac0e7051db7320bc2ad902cdd697757",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000009-1111-2222-3344-5566778899aa",
+        "nonceHex": "b6f14ce00a27f8cded19001d",
+        "plaintextLength": 523,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f090000901111222233445566778899aab6f14ce00a27f8cded19001d0b020000",
+        "ciphertextHex": "f351459bc395859012f69f20e0afe035fb6de9df1885721490c9b8ca42b6db76b5f8aa618ffd964662a417b51d93511fa80f2ab54f4b5906cd26e582c36ceb2af123913a02ded5c917d0dcf14b50db76a970595c0fcaf95fc362061f88e4fa28ec0638265aa8308b923d861ed8eb346de2fecad854be3a7728c8d1319daac7cbd2fe5e7468269d9365a986b330bb9bb47182a62dbd77715314edbdb20502860ec8edbd23a04830edb57c5f612343624c57684a6fdde56a29de3d3e4ecf2c274571f8a5131761f93293a05942bd7b9455938e5cbf3856cacb5721b42554842d6d2e84aa12e05785f128361ae6b5e0a14edc57d8767bcea6bb8826e7aeecdd6470d498562f1abfeccc9a97f63a494025fb6f8c077a9d6cfa849ee5b4f1f8cc5fb50756a9250a4ce6d5f47a03ccb1897ba3ebb77ec5dcd19b850a6f85b738ae4225b253e3ef6acbd1bcc20ff12de53b14e1b562c0c66ae4e686cc3f8b782cb5ae6080953af3a333a5b37fe1988d389001ddbc1bf34c6340396c123826cd64f5f7acb2e817371e56eb07f9ec919f3fa2ae30a5749236bf72848502f12279ab7ff34fdd208735a266bbce9f60e30d5f75d2825bfb8132cb0d4f4191e0c920d5706120c8945711bce16efb716cc93cf789d08dffc5daf23c7304ca3244b4d2bba17d7717b7e53d006f294263c456697235c3ba05943fd92f75d6bd293822ce5e2c149284b77da75a59605209ff53",
+        "tagHex": "506057b973d4f5fe6d61698b7a57619e"
+      }
+    },
+    {
+      "kind": 9,
+      "kindValue": 9,
+      "fieldKey": "duplicate-decision",
+      "payloadFlags": 288,
+      "payloadFlagsHex": "0x120",
+      "operationId": "90000010-1111-2222-3344-5566778899aa",
+      "deviceId": "718293a4-b5c6-d7e8-f90a-1b2c3d4e5f60",
+      "deviceSequence": 10,
+      "logicalClock": 10,
+      "occurredAtUtcTicks": 639029198450000010,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/09-duplicate-decision.bin",
+      "operationSha256": "7cee9db1c280118f398e9d7b50e3317ba5ce8fae6ea52655e648397e969a3a39",
+      "semanticHash": "71c4e51468041a2af94eaac5900e8ef98825a6dc60f047b4e83c6095d9ad80ae",
+      "envelopeFile": "objects/09-duplicate-decision.pao",
+      "envelopeSha256": "e1df528f9a0cd2fba99fc7176acc8510c1e1df50c980d8e8e6d9c873b7c03172",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000010-1111-2222-3344-5566778899aa",
+        "nonceHex": "af13d68fa1e4faf7acf4949b",
+        "plaintextLength": 517,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f100000901111222233445566778899aaaf13d68fa1e4faf7acf4949b05020000",
+        "ciphertextHex": "f37f78b5ee66219b9ca4ae2d5384bb5c7e69464d5b38187f3b4bdd36e737093498bd1de0adcb4cc3fe09403b5cee398708a5925debda36c88aeb55180d5a875db2bfa79d594ed2fbda5bb3f50453e27adcb7f846e2eecdb2144df57d2737ad16f2433218297c2fabb4cd3df7d000ea80db3566c3229ac25b31908659f9d8f8ba7ea46820b330e6cd22fd11d6071cdfabe1e582427564d12f92da4a30e599adf206f524b1c7d28a4a796c750fdb4807aceea0f451932116bcd960d9bc30a38d809efdf0c8fea807b37699f4310181751f5aa01bd7f35456863dc0e6c5c91feffdba1bb9c16b38fec276d9bab7d83b624d29be85c894c1d4c7e8e251d6326b560787726e71c1a37663206775d49fa85fe3e3aa0c9e46e2200bb6424716cc112cae0d7ed574e3f179a25f78babf141c5cbb5c7cb2d68823ae23db25fc1c821b5c13cbaeb94199931e6e647acc5376aed84a1a75dc48c6787ca35f69407fd4269abee37b2a312ecdf4660f20a84b3ea40b55e047f77c9fb1f789292f3129a13e6b070393d623750792fde9eb45593adc387663410ebcea6eefc6804ce80ccd0610c62d3bd83a2dcd7182c485d713100de3cad13e464ab32d301ae76057ad471fb0c5f2aa9c04541754696c1c764b7581fcce233c236c137b5a3fa394ed952f3f2c72a2cf0ba974d29d637f5dc900aedd98ab8f650c6c81b47c7b6bac9abc676dab3650bea2e32d",
+        "tagHex": "3367475b738573a2b7d280c5357881a8"
+      }
+    },
+    {
+      "kind": 10,
+      "kindValue": 10,
+      "fieldKey": "archive",
+      "payloadFlags": 0,
+      "payloadFlagsHex": "0x000",
+      "operationId": "90000011-1111-2222-3344-5566778899aa",
+      "deviceId": "60718293-a4b5-c6d7-e8f9-0a1b2c3d4e5f",
+      "deviceSequence": 11,
+      "logicalClock": 11,
+      "occurredAtUtcTicks": 639029198450000011,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/10-purged.bin",
+      "operationSha256": "f4e02d9b74d22473865dfe8c87685198c30a65569629bbf403805c631868c595",
+      "semanticHash": "b2637c2b287406f6798a755a03287f3625116ddbc153ec831a4487d339355592",
+      "envelopeFile": "objects/10-purged.pao",
+      "envelopeSha256": "7eba10bd59948c6687670224b0048309ce61bba1af3f9841090699ab9f3100b4",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000011-1111-2222-3344-5566778899aa",
+        "nonceHex": "dd190b0ccc94a3862278e59e",
+        "plaintextLength": 116,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f110000901111222233445566778899aadd190b0ccc94a3862278e59e74000000",
+        "ciphertextHex": "9f7e65e52b45c79c29df92437eba3a2a63886ee7461c5c0d2e92d870e3f64dce807564ca09f9e7d960c1d4f7679aa7829a43ff6732fc9e9d6897a4225515eedf0e5c776778d1db5d20e111e7e73b38670c228d3e989e81949abaf1022502abbb6e931e658c0671ffa6914b5a47074f44b385d522",
+        "tagHex": "0ac6f58b76753d2b2ff3f29f490b5244"
+      }
+    },
+    {
+      "kind": 11,
+      "kindValue": 11,
+      "fieldKey": "resolution:8293a4b5c6d7e8f90a1b2c3d4e5f6071",
+      "payloadFlags": 1536,
+      "payloadFlagsHex": "0x600",
+      "operationId": "90000012-1111-2222-3344-5566778899aa",
+      "deviceId": "718293a4-b5c6-d7e8-f90a-1b2c3d4e5f60",
+      "deviceSequence": 12,
+      "logicalClock": 12,
+      "occurredAtUtcTicks": 639029198450000012,
+      "accountId": "20314253-6475-8697-a8b9-cadbecfd0e1f",
+      "inputCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "serializedCausalParents": [
+        "90000001-1111-2222-3344-5566778899aa"
+      ],
+      "operationFile": "operations/11-conflict-resolved.bin",
+      "operationSha256": "7c19757522f104e4cbfeda0560ddac8f8a61a8252df8866c54bbf8a023f8cc97",
+      "semanticHash": "3231a57cd55e4378918c172fcafc34ecac2aaa14c6a6493a2de4c4dfd8c3078e",
+      "envelopeFile": "objects/11-conflict-resolved.pao",
+      "envelopeSha256": "c67d0f701ddb04010e0326b3270aaecafa1b156c09b77b24fe35f5b67595f89e",
+      "envelope": {
+        "magicAscii": "PAVGHO01",
+        "version": 1,
+        "flags": 0,
+        "repositoryId": 1234567890123,
+        "vaultId": "00112233-4455-6677-8899-aabbccddeeff",
+        "generationId": "10213243-5465-7687-98a9-bacbdcedfe0f",
+        "objectId": "90000012-1111-2222-3344-5566778899aa",
+        "nonceHex": "e5a4ae441e9736b404e0fb12",
+        "plaintextLength": 172,
+        "headerHex": "50415647484f303101000000cb04fb711f01000033221100554477668899aabbccddeeff433221106554877698a9bacbdcedfe0f120000901111222233445566778899aae5a4ae441e9736b404e0fb12ac000000",
+        "ciphertextHex": "22ebf843138e10072221ea364f111697ae776eb5f53c73fbb30f076652bb0576bac738e29f28a3e185f231dc7e5fae00a181c854251c24a4c9f5c5a93c261f9c16dabac4034c7e6fea7e3cd10a440c69fe80e48ca69be3b2c9e8c1f6baea787a5250ada4936c4aeb93911e70644ce06f6b8461cbd41a413a232ef2770711c400bda779d491c28db1680f2603c7a6b864e2b87ae091435f5387a330c766ca4a10acdc5d85ca35274c2b3b08fc",
+        "tagHex": "0f518c6548ac8951d9d2a5fdbb401139"
+      }
+    }
+  ],
+  "conflictAndMerge": {
+    "inputDictionaryOrder": [
+      "a0000002-1111-2222-3344-5566778899aa",
+      "a0000000-1111-2222-3344-5566778899aa",
+      "a0000001-1111-2222-3344-5566778899aa"
+    ],
+    "deterministicApplyOrder": [
+      "a0000000-1111-2222-3344-5566778899aa",
+      "a0000001-1111-2222-3344-5566778899aa",
+      "a0000002-1111-2222-3344-5566778899aa"
+    ],
+    "finalIssuer": "Fixture A",
+    "conflictId": "8c74861b-8a1f-0f37-dddc-e01864582b06",
+    "conflictKind": 0,
+    "conflictFieldKey": "issuer",
+    "conflictOperationAId": "a0000001-1111-2222-3344-5566778899aa",
+    "conflictOperationBId": "a0000002-1111-2222-3344-5566778899aa",
+    "appliedOperationIds": [
+      "a0000000-1111-2222-3344-5566778899aa",
+      "a0000001-1111-2222-3344-5566778899aa",
+      "a0000002-1111-2222-3344-5566778899aa"
+    ],
+    "unresolvedConflictCount": 1
+  }
+}
