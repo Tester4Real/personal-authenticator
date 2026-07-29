@@ -20,6 +20,15 @@ TestResults/
 *.appinstaller
 publish/
 
+# Android/Gradle local state and build outputs
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+android/.kotlin/
+*.jks
+*.keystore
+
 # Local authenticator data and portable backups
 *.pab
 vault.pav

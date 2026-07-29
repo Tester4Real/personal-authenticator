@@ -1,0 +1,825 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "9c8bdf28cc55b4731a9e10231fd8376a",
+    "entities": [
+      {
+        "tableName": "accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `issuerCiphertext` BLOB NOT NULL, `accountNameCiphertext` BLOB NOT NULL, `activeSecretVersionId` TEXT NOT NULL, `favourite` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `createdAtUtcTicks` INTEGER NOT NULL, `updatedAtUtcTicks` INTEGER NOT NULL, `archivedAtUtcTicks` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issuerCiphertext",
+            "columnName": "issuerCiphertext",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountNameCiphertext",
+            "columnName": "accountNameCiphertext",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeSecretVersionId",
+            "columnName": "activeSecretVersionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "favourite",
+            "columnName": "favourite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtcTicks",
+            "columnName": "createdAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtUtcTicks",
+            "columnName": "updatedAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "archivedAtUtcTicks",
+            "columnName": "archivedAtUtcTicks",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "secret_versions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `encryptedRecord` BLOB NOT NULL, `algorithm` INTEGER NOT NULL, `digits` INTEGER NOT NULL, `periodSeconds` INTEGER NOT NULL, `state` INTEGER NOT NULL, `createdAtUtcTicks` INTEGER NOT NULL, `retiredAtUtcTicks` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedRecord",
+            "columnName": "encryptedRecord",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algorithm",
+            "columnName": "algorithm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "digits",
+            "columnName": "digits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodSeconds",
+            "columnName": "periodSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtcTicks",
+            "columnName": "createdAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retiredAtUtcTicks",
+            "columnName": "retiredAtUtcTicks",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_secret_versions_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_secret_versions_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "account_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `action` INTEGER NOT NULL, `occurredAtUtcTicks` INTEGER NOT NULL, `encryptedRecord` BLOB NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "action",
+            "columnName": "action",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtUtcTicks",
+            "columnName": "occurredAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedRecord",
+            "columnName": "encryptedRecord",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_account_history_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_account_history_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          },
+          {
+            "name": "index_account_history_occurredAtUtcTicks",
+            "unique": false,
+            "columnNames": [
+              "occurredAtUtcTicks"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_account_history_occurredAtUtcTicks` ON `${TABLE_NAME}` (`occurredAtUtcTicks`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_operations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `deviceSequence` INTEGER NOT NULL, `logicalClock` INTEGER NOT NULL, `occurredAtUtcTicks` INTEGER NOT NULL, `accountId` TEXT NOT NULL, `kind` INTEGER NOT NULL, `fieldKey` TEXT NOT NULL, `originalSerializedBytes` BLOB NOT NULL, `originalBytesSha256` BLOB NOT NULL, `semanticHash` BLOB NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceSequence",
+            "columnName": "deviceSequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "logicalClock",
+            "columnName": "logicalClock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtUtcTicks",
+            "columnName": "occurredAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldKey",
+            "columnName": "fieldKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalSerializedBytes",
+            "columnName": "originalSerializedBytes",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalBytesSha256",
+            "columnName": "originalBytesSha256",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticHash",
+            "columnName": "semanticHash",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_operations_deviceId_deviceSequence",
+            "unique": true,
+            "columnNames": [
+              "deviceId",
+              "deviceSequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_operations_deviceId_deviceSequence` ON `${TABLE_NAME}` (`deviceId`, `deviceSequence`)"
+          },
+          {
+            "name": "index_sync_operations_logicalClock_deviceId_deviceSequence",
+            "unique": false,
+            "columnNames": [
+              "logicalClock",
+              "deviceId",
+              "deviceSequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_operations_logicalClock_deviceId_deviceSequence` ON `${TABLE_NAME}` (`logicalClock`, `deviceId`, `deviceSequence`)"
+          },
+          {
+            "name": "index_sync_operations_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_operations_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "causal_parents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operationId` TEXT NOT NULL, `parentOperationId` TEXT NOT NULL, PRIMARY KEY(`operationId`, `parentOperationId`))",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentOperationId",
+            "columnName": "parentOperationId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "operationId",
+            "parentOperationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_causal_parents_parentOperationId",
+            "unique": false,
+            "columnNames": [
+              "parentOperationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_causal_parents_parentOperationId` ON `${TABLE_NAME}` (`parentOperationId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "applied_identities",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operationId` TEXT NOT NULL, `deviceId` TEXT NOT NULL, `deviceSequence` INTEGER NOT NULL, `originalBytesSha256` BLOB NOT NULL, PRIMARY KEY(`operationId`))",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceSequence",
+            "columnName": "deviceSequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalBytesSha256",
+            "columnName": "originalBytesSha256",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "operationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_applied_identities_deviceId_deviceSequence",
+            "unique": true,
+            "columnNames": [
+              "deviceId",
+              "deviceSequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_applied_identities_deviceId_deviceSequence` ON `${TABLE_NAME}` (`deviceId`, `deviceSequence`)"
+          }
+        ]
+      },
+      {
+        "tableName": "field_heads",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`accountId` TEXT NOT NULL, `fieldKey` TEXT NOT NULL, `operationId` TEXT NOT NULL, `semanticHash` BLOB NOT NULL, PRIMARY KEY(`accountId`, `fieldKey`, `operationId`))",
+        "fields": [
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldKey",
+            "columnName": "fieldKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "semanticHash",
+            "columnName": "semanticHash",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "accountId",
+            "fieldKey",
+            "operationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_field_heads_operationId",
+            "unique": false,
+            "columnNames": [
+              "operationId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_field_heads_operationId` ON `${TABLE_NAME}` (`operationId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "aliases",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`aliasKind` INTEGER NOT NULL, `sourceId` TEXT NOT NULL, `targetId` TEXT NOT NULL, PRIMARY KEY(`aliasKind`, `sourceId`))",
+        "fields": [
+          {
+            "fieldPath": "aliasKind",
+            "columnName": "aliasKind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "aliasKind",
+            "sourceId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_aliases_targetId",
+            "unique": false,
+            "columnNames": [
+              "targetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_aliases_targetId` ON `${TABLE_NAME}` (`targetId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "unresolved_conflicts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `kind` INTEGER NOT NULL, `fieldKey` TEXT NOT NULL, `operationAId` TEXT NOT NULL, `operationBId` TEXT NOT NULL, `secretVersionAId` TEXT, `secretVersionBId` TEXT, `detectedAtUtcTicks` INTEGER NOT NULL, `resolved` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldKey",
+            "columnName": "fieldKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationAId",
+            "columnName": "operationAId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operationBId",
+            "columnName": "operationBId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "secretVersionAId",
+            "columnName": "secretVersionAId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "secretVersionBId",
+            "columnName": "secretVersionBId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detectedAtUtcTicks",
+            "columnName": "detectedAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resolved",
+            "columnName": "resolved",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_unresolved_conflicts_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_unresolved_conflicts_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          },
+          {
+            "name": "index_unresolved_conflicts_resolved",
+            "unique": false,
+            "columnNames": [
+              "resolved"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_unresolved_conflicts_resolved` ON `${TABLE_NAME}` (`resolved`)"
+          }
+        ]
+      },
+      {
+        "tableName": "outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operationId` TEXT NOT NULL, `preparedEnvelope` BLOB, `attemptCount` INTEGER NOT NULL, `nextAttemptAtUtcTicks` INTEGER, PRIMARY KEY(`operationId`))",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preparedEnvelope",
+            "columnName": "preparedEnvelope",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAtUtcTicks",
+            "columnName": "nextAttemptAtUtcTicks",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "operationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_nextAttemptAtUtcTicks",
+            "unique": false,
+            "columnNames": [
+              "nextAttemptAtUtcTicks"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_nextAttemptAtUtcTicks` ON `${TABLE_NAME}` (`nextAttemptAtUtcTicks`)"
+          }
+        ]
+      },
+      {
+        "tableName": "remote_ciphertext_staging",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`objectId` TEXT NOT NULL, `repositoryPath` TEXT NOT NULL, `encryptedBytes` BLOB NOT NULL, `sha256` BLOB NOT NULL, `receivedAtUtcTicks` INTEGER NOT NULL, PRIMARY KEY(`objectId`))",
+        "fields": [
+          {
+            "fieldPath": "objectId",
+            "columnName": "objectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "repositoryPath",
+            "columnName": "repositoryPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedBytes",
+            "columnName": "encryptedBytes",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAtUtcTicks",
+            "columnName": "receivedAtUtcTicks",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "objectId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_remote_ciphertext_staging_receivedAtUtcTicks",
+            "unique": false,
+            "columnNames": [
+              "receivedAtUtcTicks"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_remote_ciphertext_staging_receivedAtUtcTicks` ON `${TABLE_NAME}` (`receivedAtUtcTicks`)"
+          }
+        ]
+      },
+      {
+        "tableName": "device_clocks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`deviceId` TEXT NOT NULL, `nextDeviceSequence` INTEGER NOT NULL, `lamportClock` INTEGER NOT NULL, PRIMARY KEY(`deviceId`))",
+        "fields": [
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextDeviceSequence",
+            "columnName": "nextDeviceSequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lamportClock",
+            "columnName": "lamportClock",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "deviceId"
+          ]
+        }
+      },
+      {
+        "tableName": "sync_health",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`singletonId` INTEGER NOT NULL, `status` INTEGER NOT NULL, `pendingCount` INTEGER NOT NULL, `lastSuccessfulSyncAtUtcTicks` INTEGER, `repositoryId` INTEGER, `vaultId` TEXT, `remoteGenerationId` TEXT, `knownBranchHead` TEXT, `readOnlyReason` TEXT, `lastErrorCode` TEXT, PRIMARY KEY(`singletonId`))",
+        "fields": [
+          {
+            "fieldPath": "singletonId",
+            "columnName": "singletonId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pendingCount",
+            "columnName": "pendingCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSuccessfulSyncAtUtcTicks",
+            "columnName": "lastSuccessfulSyncAtUtcTicks",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "repositoryId",
+            "columnName": "repositoryId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "vaultId",
+            "columnName": "vaultId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "remoteGenerationId",
+            "columnName": "remoteGenerationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "knownBranchHead",
+            "columnName": "knownBranchHead",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "readOnlyReason",
+            "columnName": "readOnlyReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastErrorCode",
+            "columnName": "lastErrorCode",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "singletonId"
+          ]
+        }
+      },
+      {
+        "tableName": "known_git_objects",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`objectId` TEXT NOT NULL, `gitBlobSha` TEXT NOT NULL, `encryptedBytesSha256` BLOB NOT NULL, PRIMARY KEY(`objectId`))",
+        "fields": [
+          {
+            "fieldPath": "objectId",
+            "columnName": "objectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gitBlobSha",
+            "columnName": "gitBlobSha",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "encryptedBytesSha256",
+            "columnName": "encryptedBytesSha256",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "objectId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_known_git_objects_gitBlobSha",
+            "unique": false,
+            "columnNames": [
+              "gitBlobSha"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_known_git_objects_gitBlobSha` ON `${TABLE_NAME}` (`gitBlobSha`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9c8bdf28cc55b4731a9e10231fd8376a')"
+    ]
+  }
+}
